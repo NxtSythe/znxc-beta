@@ -1,6 +1,6 @@
 -- Zynix RBXC [BETA] - Single Script, refactored to avoid "Out of local registers"
 -- Fly speed via textbox (0.5 - 5000)
--- Dex++ integrated with states: Open / Loading / Failed / Loaded / Close
+-- Dex++ integrated with states: Open / Loading / Failed / Loaded (no Close)
 
 --// Services
 local Players = game:GetService("Players")
@@ -66,7 +66,7 @@ local State = {
 	WaitingForFreeCamHotKey = false,
 	WaitingForNoclipHotKey = false,
 
-	-- UI refs (در ادامه پر می‌شن)
+	-- UI refs
 	MainWindow = nil,
 	ESP_Window = nil,
 	Fly_Window = nil,
@@ -158,7 +158,7 @@ local function createLoadingGui()
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 2
+	stroke.Thickness = 1.5
 	stroke.Color = Color3.fromRGB(255, 255, 255)
 	stroke.Parent = frame
 
@@ -181,18 +181,23 @@ local function createLoadingGui()
 	status.TextScaled = true
 	status.TextColor3 = Color3.fromRGB(255,255,255)
 	status.TextXAlignment = Enum.TextXAlignment.Center
-	status.Text = "Initializing..."
+	status.Text = "loading ESP..."
 	status.Parent = frame
 
-	local function setStatus(text)
+	local function setStatus(text, color)
 		status.Text = text
+		if color then
+			status.TextColor3 = color
+		else
+			status.TextColor3 = Color3.fromRGB(255,255,255)
+		end
 	end
 
 	return loadingGui, setStatus
 end
 
 local loadingGui, setLoadingText = createLoadingGui()
-setLoadingText("Loading ESP...")
+setLoadingText("loading ESP...")
 
 ---------------------------------------------------------
 -- تابع رنگ فعلی ESP (برای Rainbow)
@@ -214,7 +219,6 @@ local function applyESPToPlayer(player)
 	local char = player.Character
 	if not char then return end
 
-	-- Highlight
 	if not State.Highlights[player] or not State.Highlights[player].Parent then
 		local h = Instance.new("Highlight")
 		h.FillColor = getCurrentESPColor()
@@ -290,7 +294,7 @@ local function showJoinNotification(playerName)
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 2
+	stroke.Thickness = 1.5
 	stroke.Color = Color3.fromRGB(0, 255, 0)
 	stroke.Parent = frame
 
@@ -368,7 +372,7 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
-setLoadingText("Loading players...")
+setLoadingText("loading players...")
 
 ---------------------------------------------------------
 -- Teleportation logic
@@ -726,7 +730,7 @@ local function toggleNoclip()
 end
 
 ---------------------------------------------------------
--- Dex++ logic
+-- Dex++ logic (بدون Close)
 ---------------------------------------------------------
 local DexColors = {
 	BaseGray = Color3.fromRGB(80,80,80),
@@ -754,7 +758,7 @@ local function openDex()
 	setDexButtonState("Loading...", DexColors.DarkYellow)
 	task.spawn(function()
 		closeAnyDex()
-		local ok, err = pcall(function()
+		local ok, _ = pcall(function()
 			loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
 		end)
 
@@ -766,23 +770,17 @@ local function openDex()
 		else
 			State.Dex_Loaded = true
 			setDexButtonState("Loaded", DexColors.DarkGreen)
-			task.wait(2)
-			setDexButtonState("Close", DexColors.DarkRed)
+			-- دیگه به حالت Close نمی‌ره
 		end
 	end)
-end
-
-local function closeDex()
-	closeAnyDex()
-	State.Dex_Loaded = false
-	setDexButtonState("Open", DexColors.BaseGray)
 end
 
 local function handleDexButtonClick()
 	if not State.Dex_Loaded then
 		openDex()
 	else
-		closeDex()
+		-- اگر قبلاً Dex++ ران شده بود، دیگه اجازه باز کردن دوباره نده
+		setDexButtonState("You Cant!", DexColors.DarkRed)
 	end
 end
 
@@ -885,7 +883,7 @@ end)
 ---------------------------------------------------------
 -- UI ساخت
 ---------------------------------------------------------
-setLoadingText("Loading menu...")
+setLoadingText("loading menu...")
 
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
@@ -903,6 +901,7 @@ mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی حدود 70%
 mainWindow.Active = true
 mainWindow.Draggable = true
+mainWindow.Visible = false -- تا بعد از لودینگ نمایش داده نشود
 mainWindow.Parent = ScreenGui
 State.MainWindow = mainWindow
 
@@ -911,9 +910,8 @@ mainCorner.CornerRadius = UDim.new(0,10)
 mainCorner.Parent = mainWindow
 
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Thickness = 2.5
+mainStroke.Thickness = 1.5
 mainStroke.Color = Color3.fromRGB(255,140,0)
-mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Outline
 mainStroke.Parent = mainWindow
 
 local title = Instance.new("TextLabel")
@@ -1102,7 +1100,7 @@ flySpeedCorner.Parent = flySpeedBox
 
 State.FlySpeedBox = flySpeedBox
 
-flySpeedBox.FocusLost:Connect(function(enterPressed)
+flySpeedBox.FocusLost:Connect(function()
 	local num = tonumber(flySpeedBox.Text)
 	if not num then
 		flySpeedBox.Text = tostring(State.Fly_Speed)
@@ -1155,7 +1153,7 @@ freeScroll.Size = UDim2.new(1,-20,1,-55)
 freeScroll.BackgroundTransparency = 1
 freeScroll.BorderSizePixel = 0
 freeScroll.ScrollBarThickness = 4
-	freeScroll.CanvasSize = UDim2.new(0,0,0,150)
+freeScroll.CanvasSize = UDim2.new(0,0,0,150)
 freeScroll.Parent = freeCamWindow
 
 local freeScrollCorner = Instance.new("UICorner")
@@ -1684,7 +1682,7 @@ espColorBtn.MouseButton1Click:Connect(function()
 	updateESPColorBtn()
 end)
 
--- RESET ESP دکمه
+-- RESET ESP
 local resetESPBtn = Instance.new("TextButton")
 resetESPBtn.Position = UDim2.new(0,0,0,90)
 resetESPBtn.Size = UDim2.new(1,0,0,35)
@@ -1699,12 +1697,6 @@ addHoverEffect(resetESPBtn, resetESPBtn.BackgroundColor3)
 local resetESPCorner = Instance.new("UICorner")
 resetESPCorner.CornerRadius = UDim.new(0,8)
 resetESPCorner.Parent = resetESPBtn
-
-local resetESPStroke = Instance.new("UIStroke")
-resetESPStroke.Thickness = 2
-resetESPStroke.Color = Color3.fromRGB(255,60,60)
-resetESPStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Outline
-resetESPStroke.Parent = resetESPBtn
 
 resetESPBtn.MouseButton1Click:Connect(function()
 	resetESP()
@@ -1824,10 +1816,14 @@ local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
 ---------------------------------------------------------
--- پایان لود و حذف پنل Loading
+-- پایان لود و نمایش پنل اصلی
 ---------------------------------------------------------
-task.delay(0.7, function()
+setLoadingText("Loaded!", Color3.fromRGB(0,255,0))
+task.delay(2, function()
 	if loadingGui then
 		loadingGui:Destroy()
+	end
+	if mainWindow then
+		mainWindow.Visible = true
 	end
 end)
