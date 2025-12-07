@@ -34,13 +34,13 @@ local State = {
 	Fly_KeyDownConn = nil,
 	Fly_KeyUpConn = nil,
 	Fly_RenderConn = nil,
-	Fly_HotKey = Enum.KeyCode.G,
-	Fly_HotKeyName = "G",
+	Fly_HotKey = nil,
+	Fly_HotKeyName = "None",
 
 	FreeCam_Enabled = false,
 	FreeCam_Speed = 1, -- دیفالت 1
-	FreeCam_HotKey = Enum.KeyCode.F,
-	FreeCam_HotKeyName = "F",
+	FreeCam_HotKey = nil,
+	FreeCam_HotKeyName = "None",
 	FreeCam_MoveDir = Vector3.zero,
 	FreeCam_Pos = Vector3.new(0,0,0),
 	FreeCam_Yaw = 0,
@@ -50,8 +50,8 @@ local State = {
 	Cam_OrigCFrame = nil,
 
 	Noclip_Enabled = false,
-	Noclip_HotKey = Enum.KeyCode.H,
-	Noclip_HotKeyName = "H",
+	Noclip_HotKey = nil,
+	Noclip_HotKeyName = "None",
 	Noclip_Conn = nil,
 
 	Teleport_Waypoints = {},
@@ -84,8 +84,6 @@ local State = {
 	ESPColorBtn = nil,
 	ComingSoonBtn = nil,
 	WaypointListLabel = nil,
-
-	MainCollapsed = false, -- برای Inspect
 }
 
 ---------------------------------------------------------
@@ -740,103 +738,7 @@ local function toggleNoclip()
 end
 
 ---------------------------------------------------------
--- Global Input (hotkeys + FreeCam move)
----------------------------------------------------------
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-	local key = input.KeyCode
-
-	-- انتخاب هات‌کی Fly
-	if State.WaitingForFlyHotKey then
-		State.WaitingForFlyHotKey = false
-		State.Fly_HotKey = key
-		State.Fly_HotKeyName = key.Name or "Key"
-		if State.FlyHotkeyBtn then
-			State.FlyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
-		end
-		return
-	end
-
-	-- FreeCam
-	if State.WaitingForFreeCamHotKey then
-		State.WaitingForFreeCamHotKey = false
-		State.FreeCam_HotKey = key
-		State.FreeCam_HotKeyName = key.Name or "Key"
-		if State.FreeCamHotkeyBtn then
-			State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
-		end
-		return
-	end
-
-	-- Noclip
-	if State.WaitingForNoclipHotKey then
-		State.WaitingForNoclipHotKey = false
-		State.Noclip_HotKey = key
-		State.Noclip_HotKeyName = key.Name or "Key"
-		if State.NoclipHotkeyBtn then
-			State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
-		end
-		return
-	end
-
-	-- Toggle Fly
-	if key == State.Fly_HotKey then
-		toggleFly()
-		return
-	end
-
-	-- Toggle FreeCam
-	if key == State.FreeCam_HotKey then
-		setFreeCamEnabled(not State.FreeCam_Enabled)
-		return
-	end
-
-	-- Toggle Noclip
-	if key == State.Noclip_HotKey then
-		toggleNoclip()
-		return
-	end
-
-	-- حرکت FreeCam
-	if State.FreeCam_Enabled then
-		if key == Enum.KeyCode.W then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
-		elseif key == Enum.KeyCode.S then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,1)
-		elseif key == Enum.KeyCode.A then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(-1,0,0)
-		elseif key == Enum.KeyCode.D then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(1,0,0)
-		elseif key == Enum.KeyCode.Space then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,1,0)
-		elseif key == Enum.KeyCode.LeftControl then
-			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,-1,0)
-		end
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gp)
-	if gp or not State.FreeCam_Enabled then return end
-	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-	local key = input.KeyCode
-
-	if key == Enum.KeyCode.W then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,-1)
-	elseif key == Enum.KeyCode.S then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,1)
-	elseif key == Enum.KeyCode.A then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(-1,0,0)
-	elseif key == Enum.KeyCode.D then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(1,0,0)
-	elseif key == Enum.KeyCode.Space then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
-	elseif key == Enum.KeyCode.LeftControl then
-		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
-	end
-end)
-
----------------------------------------------------------
--- UI ساخت
+-- UI ساخت اصلی
 ---------------------------------------------------------
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
@@ -851,10 +753,10 @@ local mainWindow = Instance.new("Frame")
 mainWindow.Size = UDim2.new(0, 220, 0, 310)
 mainWindow.Position = UDim2.new(0, 20, 1, -330)
 mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
-mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی حدود 70%
+mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی ~70%
 mainWindow.Active = true
 mainWindow.Draggable = true
-mainWindow.Visible = false -- بعد از لودینگ میاد
+mainWindow.Visible = false -- بعد از لودینگ
 mainWindow.Parent = ScreenGui
 State.MainWindow = mainWindow
 
@@ -871,10 +773,10 @@ mainStroke.Parent = mainWindow
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- قهوه‌ای
-title.BackgroundTransparency = 0 -- اوپسیتی 100
+title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- بک‌گراند قهوه‌ای
+title.BackgroundTransparency = 0
 title.Text = "Zynix RBXC [BETA]"
-title.TextColor3 = Color3.fromRGB(120,120,120) -- شروع طوسی
+title.TextColor3 = Color3.fromRGB(255,255,255) -- تکست سفید
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -883,28 +785,17 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
 
+-- استروک نارنجی روی بک‌گراند عنوان
 local titleStroke = Instance.new("UIStroke")
 titleStroke.Thickness = 1.3
-titleStroke.Color = Color3.fromRGB(255,140,0) -- استروک نارنجی روی بک‌گراند
+titleStroke.Color = Color3.fromRGB(255,140,0)
 titleStroke.Parent = title
 
--- دکمه Inspect
-local inspectBtn = Instance.new("TextButton")
-inspectBtn.Size = UDim2.new(0, 70, 0, 24)
-inspectBtn.Position = UDim2.new(1, -80, 0, 12)
-inspectBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-inspectBtn.TextColor3 = Color3.fromRGB(255,255,255)
-inspectBtn.TextScaled = true
-inspectBtn.Font = Enum.Font.GothamSemibold
-inspectBtn.Text = "Inspect"
-inspectBtn.Parent = mainWindow
-addHoverEffect(inspectBtn, inspectBtn.BackgroundColor3)
+-- Glow سبک برای خود متن
+title.TextStrokeColor3 = Color3.fromRGB(255,255,255)
+title.TextStrokeTransparency = 0.6 -- نور ملایم، سنگین نیست
 
-local inspectCorner = Instance.new("UICorner")
-inspectCorner.CornerRadius = UDim.new(0,6)
-inspectCorner.Parent = inspectBtn
-
--- User label (Creator حذف شد)
+-- User label
 local userLabel = Instance.new("TextLabel")
 userLabel.Position = UDim2.new(0,10,0,50)
 userLabel.Size = UDim2.new(1,-20,0,20)
@@ -928,31 +819,6 @@ mainScroll.Parent = mainWindow
 local mainScrollCorner = Instance.new("UICorner")
 mainScrollCorner.CornerRadius = UDim.new(0,8)
 mainScrollCorner.Parent = mainScroll
-
--- عملکرد Inspect: hide / reveal منو
-inspectBtn.MouseButton1Click:Connect(function()
-	State.MainCollapsed = not State.MainCollapsed
-	userLabel.Visible = not State.MainCollapsed
-	mainScroll.Visible = not State.MainCollapsed
-	if State.MainCollapsed then
-		inspectBtn.Text = "Reveal"
-	else
-		inspectBtn.Text = "Inspect"
-	end
-end)
-
--- انیمیشن رنگ متن عنوان بین طوسی و مشکی
-do
-	local grayColor = Color3.fromRGB(120,120,120)
-	local blackColor = Color3.fromRGB(0,0,0)
-	RunService.Heartbeat:Connect(function()
-		if title and title.Parent then
-			local t = tick()
-			local alpha = (math.sin(t * 1.2) + 1) / 2 -- 0 تا 1
-			title.TextColor3 = grayColor:Lerp(blackColor, alpha)
-		end
-	end)
-end
 
 ---------------------------------------------------------
 -- پنجره‌های تنظیمات
@@ -989,7 +855,6 @@ State.Noclip_Window = noclipWindow
 State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
 
--- چیدن پنجره‌ها کنار پنل اصلی
 local function stackSettingsWindows()
 	local basePos = mainWindow.Position
 	local baseSize = mainWindow.Size
@@ -1750,6 +1615,109 @@ end)
 
 local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
+
+---------------------------------------------------------
+-- Global Input (hotkeys + FreeCam move + Inspect key)
+---------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	local key = input.KeyCode
+
+	-- اگر در حال ست کردن هاتکی هستیم، فقط همون رو بگیر
+	if State.WaitingForFlyHotKey then
+		State.WaitingForFlyHotKey = false
+		State.Fly_HotKey = key
+		State.Fly_HotKeyName = key.Name or "Key"
+		if State.FlyHotkeyBtn then
+			State.FlyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
+		end
+		return
+	end
+
+	if State.WaitingForFreeCamHotKey then
+		State.WaitingForFreeCamHotKey = false
+		State.FreeCam_HotKey = key
+		State.FreeCam_HotKeyName = key.Name or "Key"
+		if State.FreeCamHotkeyBtn then
+			State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
+		end
+		return
+	end
+
+	if State.WaitingForNoclipHotKey then
+		State.WaitingForNoclipHotKey = false
+		State.Noclip_HotKey = key
+		State.Noclip_HotKeyName = key.Name or "Key"
+		if State.NoclipHotkeyBtn then
+			State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
+		end
+		return
+	end
+
+	-- Inspect key برای hide/reveal منو
+	-- اینجا F4 رو به عنوان "Inspect" در نظر گرفتیم؛ اگر خواستی عوضش کن
+	if key == Enum.KeyCode.F4 then
+		if ScreenGui then
+			ScreenGui.Enabled = not ScreenGui.Enabled
+		end
+		return
+	end
+
+	-- Toggle Fly
+	if State.Fly_HotKey and key == State.Fly_HotKey then
+		toggleFly()
+		return
+	end
+
+	-- Toggle FreeCam
+	if State.FreeCam_HotKey and key == State.FreeCam_HotKey then
+		setFreeCamEnabled(not State.FreeCam_Enabled)
+		return
+	end
+
+	-- Toggle Noclip
+	if State.Noclip_HotKey and key == State.Noclip_HotKey then
+		toggleNoclip()
+		return
+	end
+
+	-- حرکت FreeCam
+	if State.FreeCam_Enabled then
+		if key == Enum.KeyCode.W then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
+		elseif key == Enum.KeyCode.S then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,1)
+		elseif key == Enum.KeyCode.A then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(-1,0,0)
+		elseif key == Enum.KeyCode.D then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(1,0,0)
+		elseif key == Enum.KeyCode.Space then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,1,0)
+		elseif key == Enum.KeyCode.LeftControl then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,-1,0)
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gp)
+	if gp or not State.FreeCam_Enabled then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	local key = input.KeyCode
+
+	if key == Enum.KeyCode.W then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,-1)
+	elseif key == Enum.KeyCode.S then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,1)
+	elseif key == Enum.KeyCode.A then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(-1,0,0)
+	elseif key == Enum.KeyCode.D then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(1,0,0)
+	elseif key == Enum.KeyCode.Space then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
+	elseif key == Enum.KeyCode.LeftControl then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
+	end
+end)
 
 ---------------------------------------------------------
 -- پایان لود و نمایش پنل اصلی
