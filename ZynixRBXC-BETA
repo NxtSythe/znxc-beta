@@ -1,6 +1,6 @@
--- Zynix RBXC [BETA] - Single Script, refactored to avoid "Out of local registers"
+-- Zynix RBXC [BETA] - Single Script
 -- Fly speed via textbox (0.5 - 5000)
--- Dex++ integrated with states: Open / Loading / Failed / Loaded (no Close)
+-- ESP + FreeCam + Noclip + Teleport
 
 --// Services
 local Players = game:GetService("Players")
@@ -25,10 +25,9 @@ local State = {
 	ESP_Color = Color3.fromRGB(255, 0, 0), -- پیش‌فرض: Red
 	ESP_Rainbow = false,
 	Highlights = {},
-	NameTags = {},
 
 	Fly_Enabled = false,
-	Fly_Speed = 50, -- مقدار پیش‌فرض؛ کاربر می‌تواند تا 5000 تغییر دهد
+	Fly_Speed = 50,
 	Fly_BV = nil,
 	Fly_BG = nil,
 	Fly_Control = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0},
@@ -57,10 +56,6 @@ local State = {
 
 	Teleport_Waypoints = {},
 
-	-- Dex++
-	Dex_Loaded = false,
-	Dex_Button = nil,
-
 	-- Hotkey waiting flags
 	WaitingForFlyHotKey = false,
 	WaitingForFreeCamHotKey = false,
@@ -73,7 +68,6 @@ local State = {
 	FreeCam_Window = nil,
 	Noclip_Window = nil,
 	Teleport_Window = nil,
-	Dex_Window = nil,
 
 	FlyStateBtn = nil,
 	FlySpeedBox = nil,
@@ -136,7 +130,7 @@ local function findPlayerByName(partial)
 end
 
 ---------------------------------------------------------
--- Loading Panel (وسط صفحه، متن داینامیک)
+-- Loading Panel (وسط صفحه، انیمیشن Loading. .. ...)
 ---------------------------------------------------------
 local function createLoadingGui()
 	local loadingGui = Instance.new("ScreenGui")
@@ -181,23 +175,32 @@ local function createLoadingGui()
 	status.TextScaled = true
 	status.TextColor3 = Color3.fromRGB(255,255,255)
 	status.TextXAlignment = Enum.TextXAlignment.Center
-	status.Text = "loading ESP..."
+	status.Text = "Loading..."
 	status.Parent = frame
 
-	local function setStatus(text, color)
-		status.Text = text
+	local animRunning = true
+
+	task.spawn(function()
+		local dots = 0
+		while animRunning do
+			dots = (dots % 3) + 1
+			status.Text = "Loading" .. string.rep(".", dots)
+			task.wait(0.4)
+		end
+	end)
+
+	local function finishLoading(text, color)
+		animRunning = false
+		status.Text = text or "Loaded!"
 		if color then
 			status.TextColor3 = color
-		else
-			status.TextColor3 = Color3.fromRGB(255,255,255)
 		end
 	end
 
-	return loadingGui, setStatus
+	return loadingGui, finishLoading
 end
 
-local loadingGui, setLoadingText = createLoadingGui()
-setLoadingText("loading ESP...")
+local loadingGui, finishLoading = createLoadingGui()
 
 ---------------------------------------------------------
 -- تابع رنگ فعلی ESP (برای Rainbow)
@@ -212,25 +215,24 @@ local function getCurrentESPColor()
 end
 
 ---------------------------------------------------------
--- ESP logic (Highlight + ساده)
+-- ESP logic
 ---------------------------------------------------------
 local function applyESPToPlayer(player)
 	if player == localPlayer then return end
 	local char = player.Character
 	if not char then return end
 
-	if not State.Highlights[player] or not State.Highlights[player].Parent then
-		local h = Instance.new("Highlight")
-		h.FillColor = getCurrentESPColor()
+	local h = State.Highlights[player]
+	if not h or not h.Parent then
+		h = Instance.new("Highlight")
 		h.FillTransparency = 0.5
 		h.OutlineColor = Color3.fromRGB(255,255,255)
 		h.OutlineTransparency = 0
 		h.Enabled = State.ESP_Enabled
 		h.Parent = char
 		State.Highlights[player] = h
-	else
-		State.Highlights[player].FillColor = getCurrentESPColor()
 	end
+	h.FillColor = getCurrentESPColor()
 end
 
 local function refreshAllESP()
@@ -261,16 +263,22 @@ local function toggleESP()
 	setESPEnabled(not State.ESP_Enabled)
 end
 
--- RESET ESP: اسکن دوباره پلیرها و اعمال ESP
+-- RESET ESP: Destroy همه و ساخت دوباره برای همه پلیرها
 local function resetESP()
-	-- پاک کردن هایلایت‌های خراب/غیر معتبر
+	-- پاک کردن هایلایت‌های قبلی
 	for p, h in pairs(State.Highlights) do
-		if h and not h.Parent then
-			State.Highlights[p] = nil
+		if h then
+			h:Destroy()
+		end
+		State.Highlights[p] = nil
+	end
+
+	-- ساخت Highlight جدید برای همه پلیرهای فعلی
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= localPlayer then
+			applyESPToPlayer(p)
 		end
 	end
-	-- اعمال ESP به همه پلیرها
-	refreshAllESP()
 end
 
 -- نوتیف جوین
@@ -283,7 +291,7 @@ local function showJoinNotification(playerName)
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0, 260, 0, 60)
 	frame.AnchorPoint = Vector2.new(1, 1)
-	frame.Position = UDim2.new(1, 280, 1, -20) -- از بیرون صفحه شروع کند
+	frame.Position = UDim2.new(1, 280, 1, -20)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	frame.BackgroundTransparency = 0.3
 	frame.BorderSizePixel = 0
@@ -309,7 +317,6 @@ local function showJoinNotification(playerName)
 	label.Text = playerName .. " joined the game!"
 	label.Parent = frame
 
-	-- انیمیشن ورود
 	local tweenIn = TweenService:Create(
 		frame,
 		TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
@@ -343,7 +350,6 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerAdded:Connect(function(p)
-	-- نوتیف جوین
 	showJoinNotification(p.Name)
 
 	p.CharacterAdded:Connect(function()
@@ -360,7 +366,7 @@ task.spawn(function()
 	end
 end)
 
--- Rainbow آپدیت نرم
+-- Rainbow آپدیت نرم + آپدیت متن دکمه رنگ
 RunService.Heartbeat:Connect(function()
 	if State.ESP_Rainbow and State.ESP_Enabled then
 		local c = getCurrentESPColor()
@@ -369,10 +375,14 @@ RunService.Heartbeat:Connect(function()
 				h.FillColor = c
 			end
 		end
+		if State.ESPColorBtn then
+			local r = math.floor(c.R * 255)
+			local g = math.floor(c.G * 255)
+			local b = math.floor(c.B * 255)
+			State.ESPColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">RAINBOW</font>', r,g,b)
+		end
 	end
 end)
-
-setLoadingText("loading players...")
 
 ---------------------------------------------------------
 -- Teleportation logic
@@ -730,61 +740,6 @@ local function toggleNoclip()
 end
 
 ---------------------------------------------------------
--- Dex++ logic (بدون Close)
----------------------------------------------------------
-local DexColors = {
-	BaseGray = Color3.fromRGB(80,80,80),
-	DarkYellow = Color3.fromRGB(140,110,0),
-	DarkRed = Color3.fromRGB(90,0,0),
-	DarkGreen = Color3.fromRGB(0,90,0),
-}
-
-local function closeAnyDex()
-	for _, gui in ipairs(CoreGui:GetChildren()) do
-		if gui:IsA("ScreenGui") and (gui.Name:lower():find("dex") or gui.Name:lower():find("explorer")) then
-			gui:Destroy()
-		end
-	end
-end
-
-local function setDexButtonState(text, color)
-	if State.Dex_Button then
-		State.Dex_Button.Text = text
-		State.Dex_Button.BackgroundColor3 = color
-	end
-end
-
-local function openDex()
-	setDexButtonState("Loading...", DexColors.DarkYellow)
-	task.spawn(function()
-		closeAnyDex()
-		local ok, _ = pcall(function()
-			loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
-		end)
-
-		if not ok then
-			State.Dex_Loaded = false
-			setDexButtonState("Failed", DexColors.DarkRed)
-			task.wait(2)
-			setDexButtonState("Open", DexColors.BaseGray)
-		else
-			State.Dex_Loaded = true
-			setDexButtonState("Loaded", DexColors.DarkGreen)
-			-- دیگه به حالت Close نمی‌ره
-		end
-	end)
-end
-
-local function handleDexButtonClick()
-	if not State.Dex_Loaded then
-		openDex()
-	else
-		-- اگر قبلاً Dex++ ران شده بود، دیگه اجازه باز کردن دوباره نده
-		setDexButtonState("You Cant!", DexColors.DarkRed)
-	end
-end
-
----------------------------------------------------------
 -- Global Input (hotkeys + FreeCam move)
 ---------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
@@ -883,8 +838,6 @@ end)
 ---------------------------------------------------------
 -- UI ساخت
 ---------------------------------------------------------
-setLoadingText("loading menu...")
-
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
 
@@ -901,7 +854,7 @@ mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی حدود 70%
 mainWindow.Active = true
 mainWindow.Draggable = true
-mainWindow.Visible = false -- تا بعد از لودینگ نمایش داده نشود
+mainWindow.Visible = false -- بعد از لودینگ میاد
 mainWindow.Parent = ScreenGui
 State.MainWindow = mainWindow
 
@@ -914,11 +867,12 @@ mainStroke.Thickness = 1.5
 mainStroke.Color = Color3.fromRGB(255,140,0)
 mainStroke.Parent = mainWindow
 
+-- عنوان Zynix RBXC [BETA]
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(40,30,10)
-title.BackgroundTransparency = 0.3
+title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- قهوه‌ای
+title.BackgroundTransparency = 0 -- اوپسیتی 100
 title.Text = "Zynix RBXC [BETA]"
 title.TextColor3 = Color3.fromRGB(255,180,80)
 title.TextScaled = true
@@ -929,19 +883,14 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
 
-local creatorLabel = Instance.new("TextLabel")
-creatorLabel.Position = UDim2.new(0,10,0,45)
-creatorLabel.Size = UDim2.new(1,-20,0,20)
-creatorLabel.BackgroundTransparency = 1
-creatorLabel.Text = "Creator: Sythe"
-creatorLabel.TextColor3 = Color3.fromRGB(220,220,220)
-creatorLabel.TextScaled = true
-creatorLabel.Font = Enum.Font.Gotham
-creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
-creatorLabel.Parent = mainWindow
+local titleStroke = Instance.new("UIStroke")
+titleStroke.Thickness = 1.3
+titleStroke.Color = Color3.fromRGB(255,140,0)
+titleStroke.Parent = title
 
+-- User label (Creator حذف شد)
 local userLabel = Instance.new("TextLabel")
-userLabel.Position = UDim2.new(0,10,0,70)
+userLabel.Position = UDim2.new(0,10,0,50)
 userLabel.Size = UDim2.new(1,-20,0,20)
 userLabel.BackgroundTransparency = 1
 userLabel.Text = "User: " .. (localPlayer.Name or "Player")
@@ -952,8 +901,8 @@ userLabel.TextXAlignment = Enum.TextXAlignment.Left
 userLabel.Parent = mainWindow
 
 local mainScroll = Instance.new("ScrollingFrame")
-mainScroll.Position = UDim2.new(0,10,0,100)
-mainScroll.Size = UDim2.new(1,-20,1,-110)
+mainScroll.Position = UDim2.new(0,10,0,80)
+mainScroll.Size = UDim2.new(1,-20,1,-90)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
 mainScroll.ScrollBarThickness = 4
@@ -992,14 +941,12 @@ local espWindow = createSettingsWindow("ESPWindow", 230, 240)
 local noclipWindow = createSettingsWindow("NoclipWindow", 230, 160)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow = createSettingsWindow("FreeCamWindow", 230, 200)
-local dexWindow = createSettingsWindow("DexWindow", 200, 130)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
 State.Noclip_Window = noclipWindow
 State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
-State.Dex_Window = dexWindow
 
 -- چیدن پنجره‌ها کنار پنل اصلی
 local function stackSettingsWindows()
@@ -1020,7 +967,6 @@ local function stackSettingsWindows()
 	if noclipWindow.Visible then place(noclipWindow) end
 	if teleportWindow.Visible then place(teleportWindow) end
 	if espWindow.Visible then place(espWindow) end
-	if dexWindow.Visible then place(dexWindow) end
 	if freeCamWindow.Visible then place(freeCamWindow) end
 end
 
@@ -1071,7 +1017,6 @@ flyStateCorner.Parent = flyStateBtn
 State.FlyStateBtn = flyStateBtn
 flyStateBtn.MouseButton1Click:Connect(toggleFly)
 
--- TextBox برای سرعت Fly
 local flySpeedLabel = Instance.new("TextLabel")
 flySpeedLabel.Position = UDim2.new(0,0,0,45)
 flySpeedLabel.Size = UDim2.new(0.5,0,0,30)
@@ -1111,7 +1056,6 @@ flySpeedBox.FocusLost:Connect(function()
 	flySpeedBox.Text = tostring(num)
 end)
 
--- Hotkey Fly
 local flyHotkeyBtn = Instance.new("TextButton")
 flyHotkeyBtn.Position = UDim2.new(0,0,0,85)
 flyHotkeyBtn.Size = UDim2.new(1,0,0,35)
@@ -1656,12 +1600,14 @@ local function updateESPColorBtn()
 	State.ESP_Rainbow = opt.rainbow == true
 
 	if State.ESP_Rainbow then
-		-- Rainbow: رنگ داینامیک
 		local c = getCurrentESPColor()
 		for _,h in pairs(State.Highlights) do
 			if h then h.FillColor = c end
 		end
-		espColorBtn.Text = 'ESP COLOR: <font color="rgb(255,255,255)">RAINBOW</font>'
+		local r = math.floor(c.R*255)
+		local g = math.floor(c.G*255)
+		local b = math.floor(c.B*255)
+		espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">RAINBOW</font>', r,g,b)
 	else
 		State.ESP_Color = opt.color
 		for _,h in pairs(State.Highlights) do
@@ -1698,40 +1644,7 @@ local resetESPCorner = Instance.new("UICorner")
 resetESPCorner.CornerRadius = UDim.new(0,8)
 resetESPCorner.Parent = resetESPBtn
 
-resetESPBtn.MouseButton1Click:Connect(function()
-	resetESP()
-end)
-
----------------------------------------------------------
--- Dex++ Window UI
----------------------------------------------------------
-local dexTitle = Instance.new("TextLabel")
-dexTitle.Position = UDim2.new(0,10,0,10)
-dexTitle.Size = UDim2.new(1,-20,0,25)
-dexTitle.BackgroundTransparency = 1
-dexTitle.Text = "Dex++ Settings"
-dexTitle.TextColor3 = Color3.fromRGB(200,200,255)
-dexTitle.TextScaled = true
-dexTitle.Font = Enum.Font.GothamBold
-dexTitle.Parent = dexWindow
-
-local dexBtn = Instance.new("TextButton")
-dexBtn.Position = UDim2.new(0,10,0,50)
-dexBtn.Size = UDim2.new(1,-20,0,35)
-dexBtn.BackgroundColor3 = DexColors.BaseGray
-dexBtn.Font = Enum.Font.GothamSemibold
-dexBtn.TextScaled = true
-dexBtn.TextColor3 = Color3.fromRGB(255,255,255)
-dexBtn.Text = "Open"
-dexBtn.Parent = dexWindow
-addHoverEffect(dexBtn, DexColors.BaseGray)
-
-local dexBtnCorner = Instance.new("UICorner")
-dexBtnCorner.CornerRadius = UDim.new(0,8)
-dexBtnCorner.Parent = dexBtn
-
-State.Dex_Button = dexBtn
-dexBtn.MouseButton1Click:Connect(handleDexButtonClick)
+resetESPBtn.MouseButton1Click:Connect(resetESP)
 
 ---------------------------------------------------------
 -- دکمه‌های پنجره اصلی
@@ -1766,59 +1679,45 @@ local flyPanelVisible = false
 local noclipPanelVisible = false
 local teleportPanelVisible = false
 local espPanelVisible = false
-local dexPanelVisible = false
 local freeCamPanelVisible = false
 
--- Fly
 createMainButton("Fly", grayBtnColor, function()
 	flyPanelVisible = not flyPanelVisible
 	flyWindow.Visible = flyPanelVisible
 	stackSettingsWindows()
 end)
 
--- Noclip
 createMainButton("Noclip", grayBtnColor, function()
 	noclipPanelVisible = not noclipPanelVisible
 	noclipWindow.Visible = noclipPanelVisible
 	stackSettingsWindows()
 end)
 
--- Teleportation
 createMainButton("Teleportation", grayBtnColor, function()
 	teleportPanelVisible = not teleportPanelVisible
 	teleportWindow.Visible = teleportPanelVisible
 	stackSettingsWindows()
 end)
 
--- ESP
 createMainButton("ESP", grayBtnColor, function()
 	espPanelVisible = not espPanelVisible
 	espWindow.Visible = espPanelVisible
 	stackSettingsWindows()
 end)
 
--- DEX
-createMainButton("DEX", grayBtnColor, function()
-	dexPanelVisible = not dexPanelVisible
-	dexWindow.Visible = dexPanelVisible
-	stackSettingsWindows()
-end)
-
--- FreeCam
 createMainButton("FreeCam", grayBtnColor, function()
 	freeCamPanelVisible = not freeCamPanelVisible
 	freeCamWindow.Visible = freeCamPanelVisible
 	stackSettingsWindows()
 end)
 
--- Coming Soon
 local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
 ---------------------------------------------------------
 -- پایان لود و نمایش پنل اصلی
 ---------------------------------------------------------
-setLoadingText("Loaded!", Color3.fromRGB(0,255,0))
+finishLoading("Loaded!", Color3.fromRGB(0,255,0))
 task.delay(2, function()
 	if loadingGui then
 		loadingGui:Destroy()
