@@ -4,28 +4,18 @@
 --//////////////  OBFUSCATED SETTINGS  /////////////////
 --//////////////////////////////////////////////////////
 
--- PIN:
--- مثال: اگر PIN = 7392 این‌طوری بنویس:
--- "szynixloader.b7uu3x9ld2"  → فقط عددها به ترتیب مهم‌اند (۷۳۹۲)
-local PIN_TAG = "szynixloader.b7uu3x9ld2"
+local PIN_TAG = "szynixloader.b3uu2x5ld3"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
-local CORRECT_PIN = PIN_RAW:gsub("%D","") -- فقط ارقام (مثلاً 7392)
+local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
--- NAME:
--- szynixesm.[name]
-local NAME_TAG = "szynixesm.ZynixUser"
+local NAME_TAG = "szynixesm.Sythe"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
--- RANK:
--- szynixnghsh.[rank]
--- Owner / Admin / VIP / Member
 local RANK_TAG = "szynixnghsh.Owner"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
--- FEATURE OFF:
--- szynixoff.[Option-1],[Option-2],...
 -- esp, freecam, fly, teleport, noclip, setting
-local OFF_TAG = "szynixoff.none"  -- مثال: "szynixoff.esp,teleport"
+local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
 for part in string.gmatch(offRaw, "[^,]+") do
