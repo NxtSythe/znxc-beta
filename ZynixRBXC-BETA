@@ -22,7 +22,8 @@ end
 ---------------------------------------------------------
 local State = {
 	ESP_Enabled = false,
-	ESP_Color = Color3.fromRGB(0, 170, 255),
+	ESP_Color = Color3.fromRGB(255, 0, 0), -- پیش‌فرض: Red
+	ESP_Rainbow = false,
 	Highlights = {},
 	NameTags = {},
 
@@ -135,7 +136,7 @@ local function findPlayerByName(partial)
 end
 
 ---------------------------------------------------------
--- Loading Panel (پایین سمت راست)
+-- Loading Panel (وسط صفحه، متن داینامیک)
 ---------------------------------------------------------
 local function createLoadingGui()
 	local loadingGui = Instance.new("ScreenGui")
@@ -144,55 +145,66 @@ local function createLoadingGui()
 	loadingGui.Parent = playerGui
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 220, 0, 70)
-	frame.AnchorPoint = Vector2.new(1,1)
-	frame.Position = UDim2.new(1, -20, 1, -20)
-	frame.BackgroundColor3 = Color3.fromRGB(160, 80, 0)
+	frame.Size = UDim2.new(0, 260, 0, 100)
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	frame.BackgroundTransparency = 0.3 -- حدوداً اوپسیتی 70%
 	frame.BorderSizePixel = 0
 	frame.Parent = loadingGui
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
+	corner.CornerRadius = UDim.new(0, 12)
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 1.5
-	stroke.Color = Color3.fromRGB(255, 200, 120)
+	stroke.Thickness = 2
+	stroke.Color = Color3.fromRGB(255, 255, 255)
 	stroke.Parent = frame
 
 	local title = Instance.new("TextLabel")
 	title.BackgroundTransparency = 1
-	title.Size = UDim2.new(1, -10, 0, 30)
-	title.Position = UDim2.new(0,5,0,5)
+	title.Size = UDim2.new(1, -20, 0, 35)
+	title.Position = UDim2.new(0,10,0,8)
 	title.Font = Enum.Font.GothamBold
 	title.TextScaled = true
 	title.TextColor3 = Color3.fromRGB(255,255,255)
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Text = "Loading..."
+	title.TextXAlignment = Enum.TextXAlignment.Center
+	title.Text = "Zynix RBXC [BETA]"
 	title.Parent = frame
 
-	local percent = Instance.new("TextLabel")
-	percent.BackgroundTransparency = 1
-	percent.Size = UDim2.new(1, -10, 0, 25)
-	percent.Position = UDim2.new(0,5,0,40)
-	percent.Font = Enum.Font.Gotham
-	percent.TextScaled = true
-	percent.TextColor3 = Color3.fromRGB(255,255,255)
-	percent.TextXAlignment = Enum.TextXAlignment.Left
-	percent.Text = "0%"
-	percent.Parent = frame
+	local status = Instance.new("TextLabel")
+	status.BackgroundTransparency = 1
+	status.Size = UDim2.new(1, -20, 0, 40)
+	status.Position = UDim2.new(0,10,0,50)
+	status.Font = Enum.Font.Gotham
+	status.TextScaled = true
+	status.TextColor3 = Color3.fromRGB(255,255,255)
+	status.TextXAlignment = Enum.TextXAlignment.Center
+	status.Text = "Initializing..."
+	status.Parent = frame
 
-	local progress = 0
-	local function setProgress(p)
-		progress = math.clamp(p, 0, 100)
-		percent.Text = tostring(progress) .. "%"
+	local function setStatus(text)
+		status.Text = text
 	end
 
-	return loadingGui, setProgress
+	return loadingGui, setStatus
 end
 
-local loadingGui, setLoadingProgress = createLoadingGui()
-setLoadingProgress(10)
+local loadingGui, setLoadingText = createLoadingGui()
+setLoadingText("Loading ESP...")
+
+---------------------------------------------------------
+-- تابع رنگ فعلی ESP (برای Rainbow)
+---------------------------------------------------------
+local function getCurrentESPColor()
+	if State.ESP_Rainbow then
+		local h = (tick() * 0.25) % 1
+		return Color3.fromHSV(h, 1, 1)
+	else
+		return State.ESP_Color
+	end
+end
 
 ---------------------------------------------------------
 -- ESP logic (Highlight + ساده)
@@ -205,7 +217,7 @@ local function applyESPToPlayer(player)
 	-- Highlight
 	if not State.Highlights[player] or not State.Highlights[player].Parent then
 		local h = Instance.new("Highlight")
-		h.FillColor = State.ESP_Color
+		h.FillColor = getCurrentESPColor()
 		h.FillTransparency = 0.5
 		h.OutlineColor = Color3.fromRGB(255,255,255)
 		h.OutlineTransparency = 0
@@ -213,7 +225,7 @@ local function applyESPToPlayer(player)
 		h.Parent = char
 		State.Highlights[player] = h
 	else
-		State.Highlights[player].FillColor = State.ESP_Color
+		State.Highlights[player].FillColor = getCurrentESPColor()
 	end
 end
 
@@ -245,6 +257,75 @@ local function toggleESP()
 	setESPEnabled(not State.ESP_Enabled)
 end
 
+-- RESET ESP: اسکن دوباره پلیرها و اعمال ESP
+local function resetESP()
+	-- پاک کردن هایلایت‌های خراب/غیر معتبر
+	for p, h in pairs(State.Highlights) do
+		if h and not h.Parent then
+			State.Highlights[p] = nil
+		end
+	end
+	-- اعمال ESP به همه پلیرها
+	refreshAllESP()
+end
+
+-- نوتیف جوین
+local function showJoinNotification(playerName)
+	local notifGui = Instance.new("ScreenGui")
+	notifGui.Name = "ZynixJoinNotification"
+	notifGui.ResetOnSpawn = false
+	notifGui.Parent = playerGui
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 260, 0, 60)
+	frame.AnchorPoint = Vector2.new(1, 1)
+	frame.Position = UDim2.new(1, 280, 1, -20) -- از بیرون صفحه شروع کند
+	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	frame.BackgroundTransparency = 0.3
+	frame.BorderSizePixel = 0
+	frame.Parent = notifGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 2
+	stroke.Color = Color3.fromRGB(0, 255, 0)
+	stroke.Parent = frame
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, -20, 1, -20)
+	label.Position = UDim2.new(0,10,0,10)
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.TextColor3 = Color3.fromRGB(0,255,0)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.Text = playerName .. " joined the game!"
+	label.Parent = frame
+
+	-- انیمیشن ورود
+	local tweenIn = TweenService:Create(
+		frame,
+		TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+		{ Position = UDim2.new(1, -20, 1, -20) }
+	)
+	tweenIn:Play()
+
+	task.spawn(function()
+		task.wait(3)
+		local tweenOut = TweenService:Create(
+			frame,
+			TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+			{ Position = UDim2.new(1, 280, 1, -20), BackgroundTransparency = 1 }
+		)
+		tweenOut:Play()
+		tweenOut.Completed:Wait()
+		notifGui:Destroy()
+	end)
+end
+
 -- پلیرها
 for _, p in ipairs(Players:GetPlayers()) do
 	p.CharacterAdded:Connect(function()
@@ -258,19 +339,36 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerAdded:Connect(function(p)
+	-- نوتیف جوین
+	showJoinNotification(p.Name)
+
 	p.CharacterAdded:Connect(function()
 		task.wait(1)
 		applyESPToPlayer(p)
 	end)
 end)
 
--- Auto refresh
+-- Auto refresh ESP
 task.spawn(function()
 	while true do
 		task.wait(1)
 		refreshAllESP()
 	end
 end)
+
+-- Rainbow آپدیت نرم
+RunService.Heartbeat:Connect(function()
+	if State.ESP_Rainbow and State.ESP_Enabled then
+		local c = getCurrentESPColor()
+		for _, h in pairs(State.Highlights) do
+			if h then
+				h.FillColor = c
+			end
+		end
+	end
+end)
+
+setLoadingText("Loading players...")
 
 ---------------------------------------------------------
 -- Teleportation logic
@@ -502,11 +600,7 @@ localPlayer.CharacterAdded:Connect(function()
 		stopFly()
 	end
 	if State.Noclip_Enabled then
-		-- برای این که بعد از respawn دوباره نیکلپ اعمال بشه
 		task.wait(1)
-		if State.Noclip_Enabled then
-			-- دوباره فعال می‌شود در setNoclipEnabled(true) که بعداً هنگام toggle صدا زده می‌شود
-		end
 	end
 end)
 
@@ -657,7 +751,6 @@ local function setDexButtonState(text, color)
 end
 
 local function openDex()
-	-- حالت Loading
 	setDexButtonState("Loading...", DexColors.DarkYellow)
 	task.spawn(function()
 		closeAnyDex()
@@ -792,7 +885,7 @@ end)
 ---------------------------------------------------------
 -- UI ساخت
 ---------------------------------------------------------
-setLoadingProgress(40)
+setLoadingText("Loading menu...")
 
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
@@ -807,6 +900,7 @@ local mainWindow = Instance.new("Frame")
 mainWindow.Size = UDim2.new(0, 220, 0, 310)
 mainWindow.Position = UDim2.new(0, 20, 1, -330)
 mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
+mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی حدود 70%
 mainWindow.Active = true
 mainWindow.Draggable = true
 mainWindow.Parent = ScreenGui
@@ -817,14 +911,16 @@ mainCorner.CornerRadius = UDim.new(0,10)
 mainCorner.Parent = mainWindow
 
 local mainStroke = Instance.new("UIStroke")
-mainStroke.Thickness = 1.5
+mainStroke.Thickness = 2.5
 mainStroke.Color = Color3.fromRGB(255,140,0)
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Outline
 mainStroke.Parent = mainWindow
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
 title.BackgroundColor3 = Color3.fromRGB(40,30,10)
+title.BackgroundTransparency = 0.3
 title.Text = "Zynix RBXC [BETA]"
 title.TextColor3 = Color3.fromRGB(255,180,80)
 title.TextScaled = true
@@ -877,6 +973,7 @@ local function createSettingsWindow(name, w, h)
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.new(0,w,0,h)
 	frame.BackgroundColor3 = Color3.fromRGB(20,20,25)
+	frame.BackgroundTransparency = 0.3
 	frame.Visible = false
 	frame.Parent = ScreenGui
 
@@ -893,7 +990,7 @@ local function createSettingsWindow(name, w, h)
 end
 
 local flyWindow = createSettingsWindow("FlyWindow", 230, 200)
-local espWindow = createSettingsWindow("ESPWindow", 230, 220)
+local espWindow = createSettingsWindow("ESPWindow", 230, 240)
 local noclipWindow = createSettingsWindow("NoclipWindow", 230, 160)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow = createSettingsWindow("FreeCamWindow", 230, 200)
@@ -1058,7 +1155,7 @@ freeScroll.Size = UDim2.new(1,-20,1,-55)
 freeScroll.BackgroundTransparency = 1
 freeScroll.BorderSizePixel = 0
 freeScroll.ScrollBarThickness = 4
-freeScroll.CanvasSize = UDim2.new(0,0,0,150)
+	freeScroll.CanvasSize = UDim2.new(0,0,0,150)
 freeScroll.Parent = freeCamWindow
 
 local freeScrollCorner = Instance.new("UICorner")
@@ -1485,7 +1582,7 @@ end)
 updateWaypointLabel()
 
 ---------------------------------------------------------
--- ESP Window UI (ساده)
+-- ESP Window UI (با RESET و رنگ‌های جدید)
 ---------------------------------------------------------
 local espTitle = Instance.new("TextLabel")
 espTitle.Position = UDim2.new(0,10,0,10)
@@ -1503,7 +1600,7 @@ espScroll.Size = UDim2.new(1,-20,1,-55)
 espScroll.BackgroundTransparency = 1
 espScroll.BorderSizePixel = 0
 espScroll.ScrollBarThickness = 4
-espScroll.CanvasSize = UDim2.new(0,0,0,150)
+espScroll.CanvasSize = UDim2.new(0,0,0,190)
 espScroll.Parent = espWindow
 
 local espScrollCorner = Instance.new("UICorner")
@@ -1529,13 +1626,13 @@ espStateCorner.Parent = espStateBtn
 State.ESPStateBtn = espStateBtn
 espStateBtn.MouseButton1Click:Connect(toggleESP)
 
--- انتخاب رنگ ساده (چند رنگ ثابت)
+-- رنگ‌های ESP: Red, Dark Red, Yellow, White, Rainbow
 local colors = {
-	{ name = "BLUE",  color = Color3.fromRGB(0,170,255) },
-	{ name = "RED",   color = Color3.fromRGB(255,0,0) },
-	{ name = "GREEN", color = Color3.fromRGB(0,255,0) },
-	{ name = "YELLOW",color = Color3.fromRGB(255,255,0) },
-	{ name = "PINK",  color = Color3.fromRGB(255,0,132) },
+	{ name = "RED",       color = Color3.fromRGB(255,0,0) },
+	{ name = "DARK RED",  color = Color3.fromRGB(150,0,0) },
+	{ name = "YELLOW",    color = Color3.fromRGB(255,255,0) },
+	{ name = "WHITE",     color = Color3.fromRGB(255,255,255) },
+	{ name = "RAINBOW",   rainbow = true },
 }
 local colorIndex = 1
 
@@ -1558,14 +1655,25 @@ State.ESPColorBtn = espColorBtn
 
 local function updateESPColorBtn()
 	local opt = colors[colorIndex]
-	State.ESP_Color = opt.color
-	for _,h in pairs(State.Highlights) do
-		if h then h.FillColor = opt.color end
+	State.ESP_Rainbow = opt.rainbow == true
+
+	if State.ESP_Rainbow then
+		-- Rainbow: رنگ داینامیک
+		local c = getCurrentESPColor()
+		for _,h in pairs(State.Highlights) do
+			if h then h.FillColor = c end
+		end
+		espColorBtn.Text = 'ESP COLOR: <font color="rgb(255,255,255)">RAINBOW</font>'
+	else
+		State.ESP_Color = opt.color
+		for _,h in pairs(State.Highlights) do
+			if h then h.FillColor = opt.color end
+		end
+		local r = math.floor(opt.color.R*255)
+		local g = math.floor(opt.color.G*255)
+		local b = math.floor(opt.color.B*255)
+		espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">%s</font>', r,g,b,opt.name)
 	end
-	local r = math.floor(opt.color.R*255)
-	local g = math.floor(opt.color.G*255)
-	local b = math.floor(opt.color.B*255)
-	espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">%s</font>', r,g,b,opt.name)
 end
 
 updateESPColorBtn()
@@ -1574,6 +1682,32 @@ espColorBtn.MouseButton1Click:Connect(function()
 	colorIndex = colorIndex + 1
 	if colorIndex > #colors then colorIndex = 1 end
 	updateESPColorBtn()
+end)
+
+-- RESET ESP دکمه
+local resetESPBtn = Instance.new("TextButton")
+resetESPBtn.Position = UDim2.new(0,0,0,90)
+resetESPBtn.Size = UDim2.new(1,0,0,35)
+resetESPBtn.BackgroundColor3 = Color3.fromRGB(140,0,0)
+resetESPBtn.Font = Enum.Font.GothamSemibold
+resetESPBtn.TextScaled = true
+resetESPBtn.TextColor3 = Color3.fromRGB(255,255,255)
+resetESPBtn.Text = "RESET ESP"
+resetESPBtn.Parent = espScroll
+addHoverEffect(resetESPBtn, resetESPBtn.BackgroundColor3)
+
+local resetESPCorner = Instance.new("UICorner")
+resetESPCorner.CornerRadius = UDim.new(0,8)
+resetESPCorner.Parent = resetESPBtn
+
+local resetESPStroke = Instance.new("UIStroke")
+resetESPStroke.Thickness = 2
+resetESPStroke.Color = Color3.fromRGB(255,60,60)
+resetESPStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Outline
+resetESPStroke.Parent = resetESPBtn
+
+resetESPBtn.MouseButton1Click:Connect(function()
+	resetESP()
 end)
 
 ---------------------------------------------------------
@@ -1608,7 +1742,7 @@ State.Dex_Button = dexBtn
 dexBtn.MouseButton1Click:Connect(handleDexButtonClick)
 
 ---------------------------------------------------------
--- دکمه‌های پنجره اصلی (به ترتیبی که گفتی)
+-- دکمه‌های پنجره اصلی
 ---------------------------------------------------------
 local y = 0
 local function createMainButton(text, color, callback)
@@ -1692,7 +1826,6 @@ State.ComingSoonBtn = comingBtn
 ---------------------------------------------------------
 -- پایان لود و حذف پنل Loading
 ---------------------------------------------------------
-setLoadingProgress(100)
 task.delay(0.7, function()
 	if loadingGui then
 		loadingGui:Destroy()
