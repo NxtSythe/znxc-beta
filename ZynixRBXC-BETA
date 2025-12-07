@@ -1,4 +1,4 @@
--- Zynix RBXC [BETA] - Custom UI (bh-c style), no images, no external UI lib
+-- Zynix RBXC [BETA] - Custom UI (bh-c-like), no images, no external UI lib
 
 --// Services
 local Players         = game:GetService("Players")
@@ -8,7 +8,7 @@ local CoreGui         = game:GetService("CoreGui")
 
 local localPlayer     = Players.LocalPlayer
 
--- جلوگیری از دو بار اجرا شدن
+-- جلوگیری از دوبار اجرا شدن
 if getgenv and getgenv().ZynixRBXC_BETA then
     return
 end
@@ -37,9 +37,6 @@ local State = {
     ESP_Enabled   = false,
     ESP_Color     = Color3.fromRGB(0,170,255),
     ESP_Highlights= {},
-
-    -- Teleport
-    Teleport_Waypoints = {},
 
     -- Dex
     Dex_Loaded    = false,
@@ -312,14 +309,13 @@ local function toggleDex()
 end
 
 --------------------------------------------------------
--- Input (Hotkeys + Fly Direction)
+-- Input (Hotkeys + Fly direction)
 --------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
-    -- Hotkeys
     if key == State.Fly_HotKey then
         toggleFly()
         return
@@ -329,7 +325,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Fly directions
     if State.Fly_Enabled then
         if key == Enum.KeyCode.W then
             State.Fly_Control.F = 1
@@ -370,9 +365,8 @@ UserInputService.InputEnded:Connect(function(input, gp)
 end)
 
 --------------------------------------------------------
--- UI (سبک bh-c / تیره، بدون ایمیج)
+-- UI (تیره، ساده، بدون ایمیج)
 --------------------------------------------------------
--- پاک کردن نسخه قبلی UI (اگر بود)
 local oldGui = CoreGui:FindFirstChild("ZynixUI")
 if oldGui then
     oldGui:Destroy()
@@ -418,10 +412,9 @@ SubTitle.Font = Enum.Font.Gotham
 SubTitle.TextSize = 14
 SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 SubTitle.TextColor3 = Color3.fromRGB(200,200,200)
-SubTitle.Text = "Version Select (BH-C style: Beta / Coming Soon)"
+SubTitle.Text = "Select version:"
 SubTitle.Parent = MainFrame
 
--- دکمه‌های Beta / Coming Soon (جای Old/New)
 local TabBar = Instance.new("Frame")
 TabBar.Size = UDim2.new(1, -20, 0, 30)
 TabBar.Position = UDim2.new(0,10,0,60)
@@ -456,22 +449,27 @@ local ComingCorner = Instance.new("UICorner")
 ComingCorner.CornerRadius = UDim.new(0,8)
 ComingCorner.Parent = ComingBtn
 
--- ناحیه محتوای Beta
 local ContentFrame = Instance.new("Frame")
 ContentFrame.Size = UDim2.new(1, -20, 1, -110)
 ContentFrame.Position = UDim2.new(0,10,0,100)
 ContentFrame.BackgroundTransparency = 1
 ContentFrame.Parent = MainFrame
 
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0,8)
-ListLayout.FillDirection = Enum.FillDirection.Vertical
-ListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-ListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-ListLayout.Parent = ContentFrame
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.Size = UDim2.new(1,-20,0,20)
+InfoLabel.Position = UDim2.new(0,10,1,-25)
+InfoLabel.Font = Enum.Font.Gotham
+InfoLabel.TextSize = 13
+InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+InfoLabel.TextColor3 = Color3.fromRGB(200,200,200)
+InfoLabel.Text = "Select Beta to load Zynix features."
+InfoLabel.Parent = MainFrame
 
--- Helper برای ساخت سطر تنظیم
-local function createSectionTitle(text)
+--------------------------------------------------------
+-- Helper ساخت آیتم‌های منو
+--------------------------------------------------------
+local function createSectionTitle(parent, text)
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(1, 0, 0, 20)
     lbl.BackgroundTransparency = 1
@@ -480,14 +478,14 @@ local function createSectionTitle(text)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextColor3 = Color3.fromRGB(230,230,255)
     lbl.Text = text
-    lbl.Parent = ContentFrame
+    lbl.Parent = parent
 end
 
-local function createToggleRow(labelText, initial, callback)
+local function createToggleRow(parent, labelText, initial, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1,0,0,26)
     row.BackgroundTransparency = 1
-    row.Parent = ContentFrame
+    row.Parent = parent
 
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(0.6,0,1,0)
@@ -524,11 +522,11 @@ local function createToggleRow(labelText, initial, callback)
     end)
 end
 
-local function createTextboxRow(labelText, default, callback)
+local function createTextboxRow(parent, labelText, default, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1,0,0,26)
     row.BackgroundTransparency = 1
-    row.Parent = ContentFrame
+    row.Parent = parent
 
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(0.5,0,1,0)
@@ -555,7 +553,7 @@ local function createTextboxRow(labelText, default, callback)
     c.CornerRadius = UDim.new(0,6)
     c.Parent = box
 
-    box.FocusLost:Connect(function(enter)
+    box.FocusLost:Connect(function()
         if callback then
             callback(box.Text)
         end
@@ -564,11 +562,11 @@ local function createTextboxRow(labelText, default, callback)
     return box
 end
 
-local function createButtonRow(labelText, btnText, callback)
+local function createButtonRow(parent, labelText, btnText, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1,0,0,26)
     row.BackgroundTransparency = 1
-    row.Parent = ContentFrame
+    row.Parent = parent
 
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(0.5,0,1,0)
@@ -602,19 +600,32 @@ local function createButtonRow(labelText, btnText, callback)
 end
 
 --------------------------------------------------------
--- ساخت محتوای Beta
+-- ساخت منوی اصلی بعد از Beta
 --------------------------------------------------------
 local function buildBetaContent()
+    -- این صفحه‌ی Version رو جمع می‌کنیم و منو رو می‌آریم بالا
+    SubTitle.Visible = false
+    TabBar.Visible   = false
+    InfoLabel.Text   = ""
+
     ContentFrame:ClearAllChildren()
-    ListLayout.Parent = ContentFrame
+    ContentFrame.Position = UDim2.new(0,10,0,50)
+    ContentFrame.Size     = UDim2.new(1,-20,1,-60)
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0,8)
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    layout.VerticalAlignment = Enum.VerticalAlignment.Top
+    layout.Parent = ContentFrame
 
     -- Fly
-    createSectionTitle("Fly")
-    createToggleRow("Fly Enabled (Hotkey: G)", false, function(on)
+    createSectionTitle(ContentFrame,"Fly")
+    createToggleRow(ContentFrame,"Fly Enabled (Hotkey: G)", false,function(on)
         if on then startFly() else stopFly() end
     end)
 
-    createTextboxRow("Fly Speed (0.5 - 5000)", tostring(State.Fly_Speed), function(text)
+    createTextboxRow(ContentFrame,"Fly Speed (0.5 - 5000)", tostring(State.Fly_Speed),function(text)
         local n = tonumber(text)
         if n then
             if n < 0.5 then n = 0.5 end
@@ -623,7 +634,7 @@ local function buildBetaContent()
         end
     end)
 
-    createTextboxRow("Fly Hotkey (e.g. G)", "G", function(text)
+    createTextboxRow(ContentFrame,"Fly Hotkey (e.g. G)","G",function(text)
         local upper = (text or ""):upper()
         if #upper >= 1 then
             local code = Enum.KeyCode[upper:sub(1,1)]
@@ -634,12 +645,12 @@ local function buildBetaContent()
     end)
 
     -- Noclip
-    createSectionTitle("Noclip")
-    createToggleRow("Noclip Enabled (Hotkey: H)", false, function(on)
+    createSectionTitle(ContentFrame,"Noclip")
+    createToggleRow(ContentFrame,"Noclip Enabled (Hotkey: H)", false,function(on)
         setNoclip(on)
     end)
 
-    createTextboxRow("Noclip Hotkey (e.g. H)", "H", function(text)
+    createTextboxRow(ContentFrame,"Noclip Hotkey (e.g. H)","H",function(text)
         local upper = (text or ""):upper()
         if #upper >= 1 then
             local code = Enum.KeyCode[upper:sub(1,1)]
@@ -650,8 +661,8 @@ local function buildBetaContent()
     end)
 
     -- ESP
-    createSectionTitle("ESP")
-    createToggleRow("ESP Enabled", false, function(on)
+    createSectionTitle(ContentFrame,"ESP")
+    createToggleRow(ContentFrame,"ESP Enabled", false,function(on)
         setESPEnabled(on)
     end)
 
@@ -665,20 +676,17 @@ local function buildBetaContent()
     }
     local order = {"BLUE","RED","GREEN","YELLOW","PINK"}
 
-    createButtonRow("ESP Color", "BLUE", function() end) -- placeholder, below override
-
-    -- آخرین سطر اضافه شده (دکمه رنگ) رو بگیریم و روی TextButton آن کار کنیم
+    createButtonRow(ContentFrame,"ESP Color","BLUE",function() end)
     local lastRow = ContentFrame:GetChildren()[#ContentFrame:GetChildren()]
-    local colorBtn = nil
-    for _, child in ipairs(lastRow:GetChildren()) do
-        if child:IsA("TextButton") then
-            colorBtn = child
+    local colorBtn
+    for _, ch in ipairs(lastRow:GetChildren()) do
+        if ch:IsA("TextButton") then
+            colorBtn = ch
             break
         end
     end
     if colorBtn then
         colorBtn.MouseButton1Click:Connect(function()
-            -- تغییر به رنگ بعدی
             local idx = 1
             for i,v in ipairs(order) do
                 if v == currentColorName then
@@ -696,35 +704,33 @@ local function buildBetaContent()
     end
 
     -- Teleport
-    createSectionTitle("Teleport")
-    local tpPlayerName = ""
-    local bringPlayerName = ""
-    local tpPartName = ""
+    createSectionTitle(ContentFrame,"Teleport")
+    local tpPlayerName, bringPlayerName, tpPartName = "","",""
 
-    createTextboxRow("TP to Player (Name)", "", function(text)
-        tpPlayerName = text
+    createTextboxRow(ContentFrame,"TP to Player (Name)","",function(t)
+        tpPlayerName = t
     end)
-    createButtonRow("Teleport to Player", "TP", function()
+    createButtonRow(ContentFrame,"Teleport to Player","TP",function()
         teleportToPlayer(tpPlayerName)
     end)
 
-    createTextboxRow("Bring Player (Name)", "", function(text)
-        bringPlayerName = text
+    createTextboxRow(ContentFrame,"Bring Player (Name)","",function(t)
+        bringPlayerName = t
     end)
-    createButtonRow("Bring Player", "Bring", function()
+    createButtonRow(ContentFrame,"Bring Player","Bring",function()
         bringPlayer(bringPlayerName)
     end)
 
-    createTextboxRow("Teleport to Part (Name)", "", function(text)
-        tpPartName = text
+    createTextboxRow(ContentFrame,"Teleport to Part (Name)","",function(t)
+        tpPartName = t
     end)
-    createButtonRow("Teleport to Part", "TP Part", function()
+    createButtonRow(ContentFrame,"Teleport to Part","TP Part",function()
         teleportToPart(tpPartName)
     end)
 
     -- Dex++
-    createSectionTitle("Dex++")
-    createButtonRow("Dex Explorer", "Open / Close", function()
+    createSectionTitle(ContentFrame,"Dex++")
+    createButtonRow(ContentFrame,"Dex Explorer","Open / Close",function()
         toggleDex()
     end)
 end
@@ -732,19 +738,8 @@ end
 --------------------------------------------------------
 -- رفتار دکمه‌های Version
 --------------------------------------------------------
-local InfoLabel = Instance.new("TextLabel")
-InfoLabel.BackgroundTransparency = 1
-InfoLabel.Size = UDim2.new(1,-20,0,20)
-InfoLabel.Position = UDim2.new(0,10,1,-25)
-InfoLabel.Font = Enum.Font.Gotham
-InfoLabel.TextSize = 13
-InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-InfoLabel.TextColor3 = Color3.fromRGB(200,200,200)
-InfoLabel.Text = "Select Beta to load Zynix features."
-InfoLabel.Parent = MainFrame
-
 BetaBtn.MouseButton1Click:Connect(function()
-    InfoLabel.Text = "Beta loaded. Use options below."
+    Title.Text = "Zynix RBXC [BETA] - Menu"
     buildBetaContent()
 end)
 
