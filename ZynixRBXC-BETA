@@ -143,8 +143,7 @@ end
 -- Loading + PIN GUI (وسط صفحه)
 ---------------------------------------------------------
 local function createLoadingGui()
-	-- PIN را اینجا عوض کن (فقط بخش بعد از نقطه)
-	local PIN_TAG = "szynixloader.7392"
+	local PIN_TAG = "szynixloader.3253"
 	local CORRECT_PIN = PIN_TAG:match("szynixloader%.(.+)")
 
 	local loadingGui = Instance.new("ScreenGui")
