@@ -1,0 +1,1700 @@
+-- Zynix RBXC [BETA] - Single Script, refactored to avoid "Out of local registers"
+-- Fly speed via textbox (0.5 - 5000)
+-- Dex++ integrated with states: Open / Loading / Failed / Loaded / Close
+
+--// Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+-- اگر قبلاً اجرا شده، برگرد
+if playerGui:FindFirstChild("ZynixUI") then
+	return
+end
+
+---------------------------------------------------------
+-- حالت کلی (State)
+---------------------------------------------------------
+local State = {
+	ESP_Enabled = false,
+	ESP_Color = Color3.fromRGB(0, 170, 255),
+	Highlights = {},
+	NameTags = {},
+
+	Fly_Enabled = false,
+	Fly_Speed = 50, -- مقدار پیش‌فرض؛ کاربر می‌تواند تا 5000 تغییر دهد
+	Fly_BV = nil,
+	Fly_BG = nil,
+	Fly_Control = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0},
+	Fly_KeyDownConn = nil,
+	Fly_KeyUpConn = nil,
+	Fly_RenderConn = nil,
+	Fly_HotKey = Enum.KeyCode.G,
+	Fly_HotKeyName = "G",
+
+	FreeCam_Enabled = false,
+	FreeCam_Speed = 50,
+	FreeCam_HotKey = Enum.KeyCode.F,
+	FreeCam_HotKeyName = "F",
+	FreeCam_MoveDir = Vector3.zero,
+	FreeCam_Pos = Vector3.new(0,0,0),
+	FreeCam_Yaw = 0,
+	FreeCam_Pitch = 0,
+	Cam_OrigType = nil,
+	Cam_OrigSubject = nil,
+	Cam_OrigCFrame = nil,
+
+	Noclip_Enabled = false,
+	Noclip_HotKey = Enum.KeyCode.H,
+	Noclip_HotKeyName = "H",
+	Noclip_Conn = nil,
+
+	Teleport_Waypoints = {},
+
+	-- Dex++
+	Dex_Loaded = false,
+	Dex_Button = nil,
+
+	-- Hotkey waiting flags
+	WaitingForFlyHotKey = false,
+	WaitingForFreeCamHotKey = false,
+	WaitingForNoclipHotKey = false,
+
+	-- UI refs (در ادامه پر می‌شن)
+	MainWindow = nil,
+	ESP_Window = nil,
+	Fly_Window = nil,
+	FreeCam_Window = nil,
+	Noclip_Window = nil,
+	Teleport_Window = nil,
+	Dex_Window = nil,
+
+	FlyStateBtn = nil,
+	FlySpeedBox = nil,
+	FlyHotkeyBtn = nil,
+
+	FreeCamStateBtn = nil,
+	FreeCamSpeedBox = nil,
+	FreeCamHotkeyBtn = nil,
+
+	NoclipStateBtn = nil,
+	NoclipHotkeyBtn = nil,
+
+	ESPStateBtn = nil,
+	ESPColorBtn = nil,
+	ComingSoonBtn = nil,
+	WaypointListLabel = nil,
+}
+
+---------------------------------------------------------
+-- Helper functions
+---------------------------------------------------------
+local function addHoverEffect(button, baseColor)
+	button.AutoButtonColor = false
+	button.BackgroundColor3 = baseColor
+
+	button.MouseEnter:Connect(function()
+		local hoverColor = baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.12)
+		TweenService:Create(
+			button,
+			TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+			{ BackgroundColor3 = hoverColor }
+		):Play()
+	end)
+
+	button.MouseLeave:Connect(function()
+		TweenService:Create(
+			button,
+			TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+			{ BackgroundColor3 = baseColor }
+		):Play()
+	end)
+end
+
+local function getRoot(char)
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart")
+		or char:FindFirstChild("Torso")
+		or char:FindFirstChild("UpperTorso")
+end
+
+local function findPlayerByName(partial)
+	if not partial or partial == "" then return nil end
+	partial = partial:lower()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= localPlayer and plr.Name:lower():sub(1, #partial) == partial then
+			return plr
+		end
+	end
+	return nil
+end
+
+---------------------------------------------------------
+-- Loading Panel (پایین سمت راست)
+---------------------------------------------------------
+local function createLoadingGui()
+	local loadingGui = Instance.new("ScreenGui")
+	loadingGui.Name = "ZynixLoading"
+	loadingGui.ResetOnSpawn = false
+	loadingGui.Parent = playerGui
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 220, 0, 70)
+	frame.AnchorPoint = Vector2.new(1,1)
+	frame.Position = UDim2.new(1, -20, 1, -20)
+	frame.BackgroundColor3 = Color3.fromRGB(160, 80, 0)
+	frame.BorderSizePixel = 0
+	frame.Parent = loadingGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1.5
+	stroke.Color = Color3.fromRGB(255, 200, 120)
+	stroke.Parent = frame
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, -10, 0, 30)
+	title.Position = UDim2.new(0,5,0,5)
+	title.Font = Enum.Font.GothamBold
+	title.TextScaled = true
+	title.TextColor3 = Color3.fromRGB(255,255,255)
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Text = "Loading..."
+	title.Parent = frame
+
+	local percent = Instance.new("TextLabel")
+	percent.BackgroundTransparency = 1
+	percent.Size = UDim2.new(1, -10, 0, 25)
+	percent.Position = UDim2.new(0,5,0,40)
+	percent.Font = Enum.Font.Gotham
+	percent.TextScaled = true
+	percent.TextColor3 = Color3.fromRGB(255,255,255)
+	percent.TextXAlignment = Enum.TextXAlignment.Left
+	percent.Text = "0%"
+	percent.Parent = frame
+
+	local progress = 0
+	local function setProgress(p)
+		progress = math.clamp(p, 0, 100)
+		percent.Text = tostring(progress) .. "%"
+	end
+
+	return loadingGui, setProgress
+end
+
+local loadingGui, setLoadingProgress = createLoadingGui()
+setLoadingProgress(10)
+
+---------------------------------------------------------
+-- ESP logic (Highlight + ساده)
+---------------------------------------------------------
+local function applyESPToPlayer(player)
+	if player == localPlayer then return end
+	local char = player.Character
+	if not char then return end
+
+	-- Highlight
+	if not State.Highlights[player] or not State.Highlights[player].Parent then
+		local h = Instance.new("Highlight")
+		h.FillColor = State.ESP_Color
+		h.FillTransparency = 0.5
+		h.OutlineColor = Color3.fromRGB(255,255,255)
+		h.OutlineTransparency = 0
+		h.Enabled = State.ESP_Enabled
+		h.Parent = char
+		State.Highlights[player] = h
+	else
+		State.Highlights[player].FillColor = State.ESP_Color
+	end
+end
+
+local function refreshAllESP()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= localPlayer then
+			applyESPToPlayer(p)
+		end
+	end
+end
+
+local function setESPEnabled(on)
+	State.ESP_Enabled = on
+	for _, h in pairs(State.Highlights) do
+		if h then
+			h.Enabled = on
+		end
+	end
+	if State.ESPStateBtn then
+		if on then
+			State.ESPStateBtn.Text = 'ESP: <font color="rgb(0,255,0)">ON</font>'
+		else
+			State.ESPStateBtn.Text = 'ESP: <font color="rgb(255,0,0)">OFF</font>'
+		end
+	end
+end
+
+local function toggleESP()
+	setESPEnabled(not State.ESP_Enabled)
+end
+
+-- پلیرها
+for _, p in ipairs(Players:GetPlayers()) do
+	p.CharacterAdded:Connect(function()
+		task.wait(1)
+		applyESPToPlayer(p)
+	end)
+	if p.Character then
+		task.wait(1)
+		applyESPToPlayer(p)
+	end
+end
+
+Players.PlayerAdded:Connect(function(p)
+	p.CharacterAdded:Connect(function()
+		task.wait(1)
+		applyESPToPlayer(p)
+	end)
+end)
+
+-- Auto refresh
+task.spawn(function()
+	while true do
+		task.wait(1)
+		refreshAllESP()
+	end
+end)
+
+---------------------------------------------------------
+-- Teleportation logic
+---------------------------------------------------------
+local function teleportToPlayer(targetName)
+	local targetPlayer = findPlayerByName(targetName)
+	if not targetPlayer or not targetPlayer.Character then return end
+
+	local myChar = localPlayer.Character
+	local myRoot = myChar and getRoot(myChar)
+	local targetRoot = getRoot(targetPlayer.Character)
+	if myRoot and targetRoot then
+		myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, -3)
+	end
+end
+
+local function bringPlayer(targetName)
+	local targetPlayer = findPlayerByName(targetName)
+	if not targetPlayer or not targetPlayer.Character then return end
+
+	local myChar = localPlayer.Character
+	local myRoot = myChar and getRoot(myChar)
+	local targetRoot = getRoot(targetPlayer.Character)
+	if myRoot and targetRoot then
+		pcall(function()
+			targetRoot.CFrame = myRoot.CFrame * CFrame.new(0, 0, -3)
+		end)
+	end
+end
+
+local function teleportToLocation(locationName)
+	if not locationName or locationName == "" then return end
+	local lower = locationName:lower()
+	local targetPart
+
+	for _, inst in ipairs(workspace:GetDescendants()) do
+		if inst:IsA("BasePart") and inst.Name:lower() == lower then
+			targetPart = inst
+			break
+		end
+	end
+	if not targetPart then return end
+
+	local myChar = localPlayer.Character
+	local myRoot = myChar and getRoot(myChar)
+	if myRoot then
+		myRoot.CFrame = targetPart.CFrame + Vector3.new(0,5,0)
+	end
+end
+
+local function addWaypoint(name)
+	if not name or name == "" then return end
+	local myChar = localPlayer.Character
+	local myRoot = myChar and getRoot(myChar)
+	if myRoot then
+		State.Teleport_Waypoints[name] = myRoot.Position
+	end
+end
+
+local function deleteWaypoint(name)
+	if not name or name == "" then return end
+	State.Teleport_Waypoints[name] = nil
+end
+
+local function clearWaypoints()
+	State.Teleport_Waypoints = {}
+end
+
+local function getWaypointNames()
+	local names = {}
+	for k,_ in pairs(State.Teleport_Waypoints) do
+		table.insert(names, k)
+	end
+	table.sort(names)
+	return names
+end
+
+local function teleportToWaypoint(name)
+	if not name or name == "" then return end
+	local pos = State.Teleport_Waypoints[name]
+	if not pos then return end
+	local myChar = localPlayer.Character
+	local myRoot = myChar and getRoot(myChar)
+	if myRoot then
+		myRoot.CFrame = CFrame.new(pos)
+	end
+end
+
+local function updateWaypointLabel()
+	if not State.WaypointListLabel then return end
+	local names = getWaypointNames()
+	if #names == 0 then
+		State.WaypointListLabel.Text = "Current WPs: (none)"
+	else
+		State.WaypointListLabel.Text = "Current WPs: " .. table.concat(names, ", ")
+	end
+end
+
+---------------------------------------------------------
+-- Fly logic
+---------------------------------------------------------
+local function stopFly()
+	if not State.Fly_Enabled then return end
+	State.Fly_Enabled = false
+
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.PlatformStand = false
+	end
+
+	if State.Fly_BV then State.Fly_BV:Destroy() State.Fly_BV = nil end
+	if State.Fly_BG then State.Fly_BG:Destroy() State.Fly_BG = nil end
+	if State.Fly_KeyDownConn then State.Fly_KeyDownConn:Disconnect() State.Fly_KeyDownConn = nil end
+	if State.Fly_KeyUpConn then State.Fly_KeyUpConn:Disconnect() State.Fly_KeyUpConn = nil end
+	if State.Fly_RenderConn then State.Fly_RenderConn:Disconnect() State.Fly_RenderConn = nil end
+
+	State.Fly_Control = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+
+	if State.FlyStateBtn then
+		State.FlyStateBtn.Text = 'Fly: <font color="rgb(255,0,0)">OFF</font>'
+	end
+end
+
+local function startFly()
+	if State.Fly_Enabled then return end
+
+	local char = localPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local root = getRoot(char)
+	if not root then return end
+
+	State.Fly_Enabled = true
+	hum.PlatformStand = true
+
+	State.Fly_BV = Instance.new("BodyVelocity")
+	State.Fly_BV.Velocity = Vector3.new(0,0,0)
+	State.Fly_BV.MaxForce = Vector3.new(9e9,9e9,9e9)
+	State.Fly_BV.Parent = root
+
+	State.Fly_BG = Instance.new("BodyGyro")
+	State.Fly_BG.P = 9e4
+	State.Fly_BG.MaxTorque = Vector3.new(9e9,9e9,9e9)
+	State.Fly_BG.CFrame = root.CFrame
+	State.Fly_BG.Parent = root
+
+	State.Fly_Control = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+
+	if State.Fly_KeyDownConn then State.Fly_KeyDownConn:Disconnect() end
+	if State.Fly_KeyUpConn then State.Fly_KeyUpConn:Disconnect() end
+	if State.Fly_RenderConn then State.Fly_RenderConn:Disconnect() end
+
+	State.Fly_KeyDownConn = UserInputService.InputBegan:Connect(function(input, gp)
+		if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+		local code = input.KeyCode
+		if code == Enum.KeyCode.W then
+			State.Fly_Control.F = State.Fly_Speed
+		elseif code == Enum.KeyCode.S then
+			State.Fly_Control.B = -State.Fly_Speed
+		elseif code == Enum.KeyCode.A then
+			State.Fly_Control.L = -State.Fly_Speed
+		elseif code == Enum.KeyCode.D then
+			State.Fly_Control.R = State.Fly_Speed
+		elseif code == Enum.KeyCode.E then
+			State.Fly_Control.Q = State.Fly_Speed
+		elseif code == Enum.KeyCode.Q then
+			State.Fly_Control.E = -State.Fly_Speed
+		end
+	end)
+
+	State.Fly_KeyUpConn = UserInputService.InputEnded:Connect(function(input, gp)
+		if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+		local code = input.KeyCode
+		if code == Enum.KeyCode.W then
+			State.Fly_Control.F = 0
+		elseif code == Enum.KeyCode.S then
+			State.Fly_Control.B = 0
+		elseif code == Enum.KeyCode.A then
+			State.Fly_Control.L = 0
+		elseif code == Enum.KeyCode.D then
+			State.Fly_Control.R = 0
+		elseif code == Enum.KeyCode.E then
+			State.Fly_Control.Q = 0
+		elseif code == Enum.KeyCode.Q then
+			State.Fly_Control.E = 0
+		end
+	end)
+
+	State.Fly_RenderConn = RunService.RenderStepped:Connect(function()
+		if not State.Fly_Enabled then return end
+		if not root or not root.Parent then return end
+		local cam = workspace.CurrentCamera
+		if not cam then return end
+
+		State.Fly_BG.CFrame = cam.CFrame
+		local dir = Vector3.new(
+			State.Fly_Control.L + State.Fly_Control.R,
+			State.Fly_Control.Q + State.Fly_Control.E,
+			State.Fly_Control.F + State.Fly_Control.B
+		)
+
+		if dir.Magnitude > 0 then
+			dir = dir.Unit * (State.Fly_Speed * 50)
+			local cf = cam.CFrame
+			local vel = cf.RightVector * dir.X + cf.UpVector * dir.Y + cf.LookVector * dir.Z
+			State.Fly_BV.Velocity = vel
+		else
+			State.Fly_BV.Velocity = Vector3.new(0,0,0)
+		end
+	end)
+
+	if State.FlyStateBtn then
+		State.FlyStateBtn.Text = 'Fly: <font color="rgb(0,255,0)">ON</font>'
+	end
+end
+
+local function toggleFly()
+	if State.Fly_Enabled then
+		stopFly()
+	else
+		startFly()
+	end
+end
+
+localPlayer.CharacterAdded:Connect(function()
+	if State.Fly_Enabled then
+		stopFly()
+	end
+	if State.Noclip_Enabled then
+		-- برای این که بعد از respawn دوباره نیکلپ اعمال بشه
+		task.wait(1)
+		if State.Noclip_Enabled then
+			-- دوباره فعال می‌شود در setNoclipEnabled(true) که بعداً هنگام toggle صدا زده می‌شود
+		end
+	end
+end)
+
+---------------------------------------------------------
+-- FreeCam logic
+---------------------------------------------------------
+local function setFreeCamEnabled(state)
+	if state == State.FreeCam_Enabled then return end
+	local camera = workspace.CurrentCamera
+
+	if state then
+		State.FreeCam_Enabled = true
+		State.Cam_OrigType = camera.CameraType
+		State.Cam_OrigSubject = camera.CameraSubject
+		State.Cam_OrigCFrame = camera.CFrame
+
+		local cf = camera.CFrame
+		State.FreeCam_Pos = cf.Position
+		local look = cf.LookVector
+		State.FreeCam_Yaw = math.atan2(-look.X, -look.Z)
+		State.FreeCam_Pitch = math.asin(look.Y)
+		State.FreeCam_MoveDir = Vector3.zero
+
+		camera.CameraType = Enum.CameraType.Scriptable
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UserInputService.MouseIconEnabled = false
+	else
+		State.FreeCam_Enabled = false
+		State.FreeCam_MoveDir = Vector3.zero
+
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
+		camera.CameraType = State.Cam_OrigType or Enum.CameraType.Custom
+		if State.Cam_OrigSubject then
+			camera.CameraSubject = State.Cam_OrigSubject
+		end
+		if State.Cam_OrigCFrame then
+			camera.CFrame = State.Cam_OrigCFrame
+		end
+	end
+
+	if State.FreeCamStateBtn then
+		if State.FreeCam_Enabled then
+			State.FreeCamStateBtn.Text = 'FreeCam: <font color="rgb(0,255,0)">ON</font>'
+		else
+			State.FreeCamStateBtn.Text = 'FreeCam: <font color="rgb(255,0,0)">OFF</font>'
+		end
+	end
+end
+
+UserInputService.InputChanged:Connect(function(input, gp)
+	if gp or not State.FreeCam_Enabled then return end
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Delta
+		local sensitivity = 0.0025
+		State.FreeCam_Yaw = State.FreeCam_Yaw - delta.X * sensitivity
+		State.FreeCam_Pitch = math.clamp(State.FreeCam_Pitch - delta.Y * sensitivity, -1.4, 1.4)
+	end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+	if not State.FreeCam_Enabled then return end
+	local camera = workspace.CurrentCamera
+	local rot = CFrame.Angles(0, State.FreeCam_Yaw, 0) * CFrame.Angles(State.FreeCam_Pitch, 0, 0)
+	local cf = CFrame.new(State.FreeCam_Pos) * rot
+
+	local move = State.FreeCam_MoveDir
+	if move.Magnitude > 0 then
+		move = move.Unit
+		local moveWorld = (cf.RightVector * move.X + cf.UpVector * move.Y + cf.LookVector * move.Z) * State.FreeCam_Speed * dt
+		State.FreeCam_Pos = State.FreeCam_Pos + moveWorld
+		cf = CFrame.new(State.FreeCam_Pos) * rot
+	end
+
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = cf
+end)
+
+---------------------------------------------------------
+-- Noclip logic
+---------------------------------------------------------
+local function setNoclipEnabled(on)
+	if on == State.Noclip_Enabled then return end
+	State.Noclip_Enabled = on
+
+	if State.Noclip_Conn then
+		State.Noclip_Conn:Disconnect()
+		State.Noclip_Conn = nil
+	end
+
+	if on then
+		State.Noclip_Conn = RunService.Stepped:Connect(function()
+			local char = localPlayer.Character
+			if not char then return end
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end)
+	else
+		local char = localPlayer.Character
+		if char then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = true
+				end
+			end
+		end
+	end
+
+	if State.NoclipStateBtn then
+		if on then
+			State.NoclipStateBtn.Text = 'Noclip: <font color="rgb(0,255,0)">ON</font>'
+		else
+			State.NoclipStateBtn.Text = 'Noclip: <font color="rgb(255,0,0)">OFF</font>'
+		end
+	end
+end
+
+local function toggleNoclip()
+	setNoclipEnabled(not State.Noclip_Enabled)
+end
+
+---------------------------------------------------------
+-- Dex++ logic
+---------------------------------------------------------
+local DexColors = {
+	BaseGray = Color3.fromRGB(80,80,80),
+	DarkYellow = Color3.fromRGB(140,110,0),
+	DarkRed = Color3.fromRGB(90,0,0),
+	DarkGreen = Color3.fromRGB(0,90,0),
+}
+
+local function closeAnyDex()
+	for _, gui in ipairs(CoreGui:GetChildren()) do
+		if gui:IsA("ScreenGui") and (gui.Name:lower():find("dex") or gui.Name:lower():find("explorer")) then
+			gui:Destroy()
+		end
+	end
+end
+
+local function setDexButtonState(text, color)
+	if State.Dex_Button then
+		State.Dex_Button.Text = text
+		State.Dex_Button.BackgroundColor3 = color
+	end
+end
+
+local function openDex()
+	-- حالت Loading
+	setDexButtonState("Loading...", DexColors.DarkYellow)
+	task.spawn(function()
+		closeAnyDex()
+		local ok, err = pcall(function()
+			loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
+		end)
+
+		if not ok then
+			State.Dex_Loaded = false
+			setDexButtonState("Failed", DexColors.DarkRed)
+			task.wait(2)
+			setDexButtonState("Open", DexColors.BaseGray)
+		else
+			State.Dex_Loaded = true
+			setDexButtonState("Loaded", DexColors.DarkGreen)
+			task.wait(2)
+			setDexButtonState("Close", DexColors.DarkRed)
+		end
+	end)
+end
+
+local function closeDex()
+	closeAnyDex()
+	State.Dex_Loaded = false
+	setDexButtonState("Open", DexColors.BaseGray)
+end
+
+local function handleDexButtonClick()
+	if not State.Dex_Loaded then
+		openDex()
+	else
+		closeDex()
+	end
+end
+
+---------------------------------------------------------
+-- Global Input (hotkeys + FreeCam move)
+---------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	local key = input.KeyCode
+
+	-- انتخاب هات‌کی Fly
+	if State.WaitingForFlyHotKey then
+		State.WaitingForFlyHotKey = false
+		State.Fly_HotKey = key
+		State.Fly_HotKeyName = key.Name or "Key"
+		if State.FlyHotkeyBtn then
+			State.FlyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
+		end
+		return
+	end
+
+	-- FreeCam
+	if State.WaitingForFreeCamHotKey then
+		State.WaitingForFreeCamHotKey = false
+		State.FreeCam_HotKey = key
+		State.FreeCam_HotKeyName = key.Name or "Key"
+		if State.FreeCamHotkeyBtn then
+			State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
+		end
+		return
+	end
+
+	-- Noclip
+	if State.WaitingForNoclipHotKey then
+		State.WaitingForNoclipHotKey = false
+		State.Noclip_HotKey = key
+		State.Noclip_HotKeyName = key.Name or "Key"
+		if State.NoclipHotkeyBtn then
+			State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
+		end
+		return
+	end
+
+	-- Toggle Fly
+	if key == State.Fly_HotKey then
+		toggleFly()
+		return
+	end
+
+	-- Toggle FreeCam
+	if key == State.FreeCam_HotKey then
+		setFreeCamEnabled(not State.FreeCam_Enabled)
+		return
+	end
+
+	-- Toggle Noclip
+	if key == State.Noclip_HotKey then
+		toggleNoclip()
+		return
+	end
+
+	-- حرکت FreeCam
+	if State.FreeCam_Enabled then
+		if key == Enum.KeyCode.W then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
+		elseif key == Enum.KeyCode.S then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,1)
+		elseif key == Enum.KeyCode.A then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(-1,0,0)
+		elseif key == Enum.KeyCode.D then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(1,0,0)
+		elseif key == Enum.KeyCode.Space then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,1,0)
+		elseif key == Enum.KeyCode.LeftControl then
+			State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,-1,0)
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gp)
+	if gp or not State.FreeCam_Enabled then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	local key = input.KeyCode
+
+	if key == Enum.KeyCode.W then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,-1)
+	elseif key == Enum.KeyCode.S then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,1)
+	elseif key == Enum.KeyCode.A then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(-1,0,0)
+	elseif key == Enum.KeyCode.D then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(1,0,0)
+	elseif key == Enum.KeyCode.Space then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
+	elseif key == Enum.KeyCode.LeftControl then
+		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
+	end
+end)
+
+---------------------------------------------------------
+-- UI ساخت
+---------------------------------------------------------
+setLoadingProgress(40)
+
+local grayBtnColor = Color3.fromRGB(80,80,80)
+local darkRedBtnColor = Color3.fromRGB(90,0,0)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ZynixUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = playerGui
+
+-- پنجره اصلی
+local mainWindow = Instance.new("Frame")
+mainWindow.Size = UDim2.new(0, 220, 0, 310)
+mainWindow.Position = UDim2.new(0, 20, 1, -330)
+mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
+mainWindow.Active = true
+mainWindow.Draggable = true
+mainWindow.Parent = ScreenGui
+State.MainWindow = mainWindow
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0,10)
+mainCorner.Parent = mainWindow
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Color = Color3.fromRGB(255,140,0)
+mainStroke.Parent = mainWindow
+
+local title = Instance.new("TextLabel")
+title.Position = UDim2.new(0,10,0,10)
+title.Size = UDim2.new(1,-20,0,30)
+title.BackgroundColor3 = Color3.fromRGB(40,30,10)
+title.Text = "Zynix RBXC [BETA]"
+title.TextColor3 = Color3.fromRGB(255,180,80)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainWindow
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0,8)
+titleCorner.Parent = title
+
+local creatorLabel = Instance.new("TextLabel")
+creatorLabel.Position = UDim2.new(0,10,0,45)
+creatorLabel.Size = UDim2.new(1,-20,0,20)
+creatorLabel.BackgroundTransparency = 1
+creatorLabel.Text = "Creator: Sythe"
+creatorLabel.TextColor3 = Color3.fromRGB(220,220,220)
+creatorLabel.TextScaled = true
+creatorLabel.Font = Enum.Font.Gotham
+creatorLabel.TextXAlignment = Enum.TextXAlignment.Left
+creatorLabel.Parent = mainWindow
+
+local userLabel = Instance.new("TextLabel")
+userLabel.Position = UDim2.new(0,10,0,70)
+userLabel.Size = UDim2.new(1,-20,0,20)
+userLabel.BackgroundTransparency = 1
+userLabel.Text = "User: " .. (localPlayer.Name or "Player")
+userLabel.TextColor3 = Color3.fromRGB(220,220,220)
+userLabel.TextScaled = true
+userLabel.Font = Enum.Font.Gotham
+userLabel.TextXAlignment = Enum.TextXAlignment.Left
+userLabel.Parent = mainWindow
+
+local mainScroll = Instance.new("ScrollingFrame")
+mainScroll.Position = UDim2.new(0,10,0,100)
+mainScroll.Size = UDim2.new(1,-20,1,-110)
+mainScroll.BackgroundTransparency = 1
+mainScroll.BorderSizePixel = 0
+mainScroll.ScrollBarThickness = 4
+mainScroll.CanvasSize = UDim2.new(0,0,0,300)
+mainScroll.Parent = mainWindow
+
+local mainScrollCorner = Instance.new("UICorner")
+mainScrollCorner.CornerRadius = UDim.new(0,8)
+mainScrollCorner.Parent = mainScroll
+
+---------------------------------------------------------
+-- پنجره‌های تنظیمات
+---------------------------------------------------------
+local function createSettingsWindow(name, w, h)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0,w,0,h)
+	frame.BackgroundColor3 = Color3.fromRGB(20,20,25)
+	frame.Visible = false
+	frame.Parent = ScreenGui
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0,10)
+	c.Parent = frame
+
+	local s = Instance.new("UIStroke")
+	s.Thickness = 1.5
+	s.Color = Color3.fromRGB(0,200,255)
+	s.Parent = frame
+
+	return frame
+end
+
+local flyWindow = createSettingsWindow("FlyWindow", 230, 200)
+local espWindow = createSettingsWindow("ESPWindow", 230, 220)
+local noclipWindow = createSettingsWindow("NoclipWindow", 230, 160)
+local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
+local freeCamWindow = createSettingsWindow("FreeCamWindow", 230, 200)
+local dexWindow = createSettingsWindow("DexWindow", 200, 130)
+
+State.Fly_Window = flyWindow
+State.ESP_Window = espWindow
+State.Noclip_Window = noclipWindow
+State.Teleport_Window = teleportWindow
+State.FreeCam_Window = freeCamWindow
+State.Dex_Window = dexWindow
+
+-- چیدن پنجره‌ها کنار پنل اصلی
+local function stackSettingsWindows()
+	local basePos = mainWindow.Position
+	local baseSize = mainWindow.Size
+
+	local xScale = basePos.X.Scale
+	local xOff = basePos.X.Offset + baseSize.X.Offset + 10
+	local yScale = basePos.Y.Scale
+	local yOff = basePos.Y.Offset
+
+	local function place(win)
+		win.Position = UDim2.new(xScale, xOff, yScale, yOff)
+		yOff = yOff + win.Size.Y.Offset + 10
+	end
+
+	if flyWindow.Visible then place(flyWindow) end
+	if noclipWindow.Visible then place(noclipWindow) end
+	if teleportWindow.Visible then place(teleportWindow) end
+	if espWindow.Visible then place(espWindow) end
+	if dexWindow.Visible then place(dexWindow) end
+	if freeCamWindow.Visible then place(freeCamWindow) end
+end
+
+mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
+
+---------------------------------------------------------
+-- Fly Window UI
+---------------------------------------------------------
+local flyTitle = Instance.new("TextLabel")
+flyTitle.Position = UDim2.new(0,10,0,10)
+flyTitle.Size = UDim2.new(1,-20,0,25)
+flyTitle.BackgroundTransparency = 1
+flyTitle.Text = "Fly Settings"
+flyTitle.TextColor3 = Color3.fromRGB(200,200,255)
+flyTitle.TextScaled = true
+flyTitle.Font = Enum.Font.GothamBold
+flyTitle.Parent = flyWindow
+
+local flyScroll = Instance.new("ScrollingFrame")
+flyScroll.Position = UDim2.new(0,10,0,45)
+flyScroll.Size = UDim2.new(1,-20,1,-55)
+flyScroll.BackgroundTransparency = 1
+flyScroll.BorderSizePixel = 0
+flyScroll.ScrollBarThickness = 4
+flyScroll.CanvasSize = UDim2.new(0,0,0,150)
+flyScroll.Parent = flyWindow
+
+local flyScrollCorner = Instance.new("UICorner")
+flyScrollCorner.CornerRadius = UDim.new(0,8)
+flyScrollCorner.Parent = flyScroll
+
+local flyStateBtn = Instance.new("TextButton")
+flyStateBtn.Position = UDim2.new(0,0,0,0)
+flyStateBtn.Size = UDim2.new(1,0,0,35)
+flyStateBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+flyStateBtn.Font = Enum.Font.GothamSemibold
+flyStateBtn.TextScaled = true
+flyStateBtn.TextColor3 = Color3.fromRGB(255,255,255)
+flyStateBtn.RichText = true
+flyStateBtn.Text = 'Fly: <font color="rgb(255,0,0)">OFF</font>'
+flyStateBtn.Parent = flyScroll
+addHoverEffect(flyStateBtn, flyStateBtn.BackgroundColor3)
+
+local flyStateCorner = Instance.new("UICorner")
+flyStateCorner.CornerRadius = UDim.new(0,8)
+flyStateCorner.Parent = flyStateBtn
+
+State.FlyStateBtn = flyStateBtn
+flyStateBtn.MouseButton1Click:Connect(toggleFly)
+
+-- TextBox برای سرعت Fly
+local flySpeedLabel = Instance.new("TextLabel")
+flySpeedLabel.Position = UDim2.new(0,0,0,45)
+flySpeedLabel.Size = UDim2.new(0.5,0,0,30)
+flySpeedLabel.BackgroundTransparency = 1
+flySpeedLabel.Text = "Speed:"
+flySpeedLabel.Font = Enum.Font.Gotham
+flySpeedLabel.TextScaled = true
+flySpeedLabel.TextColor3 = Color3.fromRGB(230,230,230)
+flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+flySpeedLabel.Parent = flyScroll
+
+local flySpeedBox = Instance.new("TextBox")
+flySpeedBox.Position = UDim2.new(0.5,0,0,45)
+flySpeedBox.Size = UDim2.new(0.5,0,0,30)
+flySpeedBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+flySpeedBox.Font = Enum.Font.Gotham
+flySpeedBox.TextScaled = true
+flySpeedBox.TextColor3 = Color3.fromRGB(255,255,255)
+flySpeedBox.PlaceholderText = "1 - 5000"
+flySpeedBox.Text = tostring(State.Fly_Speed)
+flySpeedBox.Parent = flyScroll
+
+local flySpeedCorner = Instance.new("UICorner")
+flySpeedCorner.CornerRadius = UDim.new(0,6)
+flySpeedCorner.Parent = flySpeedBox
+
+State.FlySpeedBox = flySpeedBox
+
+flySpeedBox.FocusLost:Connect(function(enterPressed)
+	local num = tonumber(flySpeedBox.Text)
+	if not num then
+		flySpeedBox.Text = tostring(State.Fly_Speed)
+		return
+	end
+	num = math.clamp(num, 0.5, 5000)
+	State.Fly_Speed = num
+	flySpeedBox.Text = tostring(num)
+end)
+
+-- Hotkey Fly
+local flyHotkeyBtn = Instance.new("TextButton")
+flyHotkeyBtn.Position = UDim2.new(0,0,0,85)
+flyHotkeyBtn.Size = UDim2.new(1,0,0,35)
+flyHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+flyHotkeyBtn.Font = Enum.Font.GothamSemibold
+flyHotkeyBtn.TextScaled = true
+flyHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+flyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
+flyHotkeyBtn.Parent = flyScroll
+addHoverEffect(flyHotkeyBtn, flyHotkeyBtn.BackgroundColor3)
+
+local flyHotkeyCorner = Instance.new("UICorner")
+flyHotkeyCorner.CornerRadius = UDim.new(0,8)
+flyHotkeyCorner.Parent = flyHotkeyBtn
+
+State.FlyHotkeyBtn = flyHotkeyBtn
+
+flyHotkeyBtn.MouseButton1Click:Connect(function()
+	State.WaitingForFlyHotKey = true
+	flyHotkeyBtn.Text = "HotKey: [Press Key]"
+end)
+
+---------------------------------------------------------
+-- FreeCam Window
+---------------------------------------------------------
+local freeTitle = Instance.new("TextLabel")
+freeTitle.Position = UDim2.new(0,10,0,10)
+freeTitle.Size = UDim2.new(1,-20,0,25)
+freeTitle.BackgroundTransparency = 1
+freeTitle.Text = "FreeCam Settings"
+freeTitle.TextColor3 = Color3.fromRGB(200,200,255)
+freeTitle.TextScaled = true
+freeTitle.Font = Enum.Font.GothamBold
+freeTitle.Parent = freeCamWindow
+
+local freeScroll = Instance.new("ScrollingFrame")
+freeScroll.Position = UDim2.new(0,10,0,45)
+freeScroll.Size = UDim2.new(1,-20,1,-55)
+freeScroll.BackgroundTransparency = 1
+freeScroll.BorderSizePixel = 0
+freeScroll.ScrollBarThickness = 4
+freeScroll.CanvasSize = UDim2.new(0,0,0,150)
+freeScroll.Parent = freeCamWindow
+
+local freeScrollCorner = Instance.new("UICorner")
+freeScrollCorner.CornerRadius = UDim.new(0,8)
+freeScrollCorner.Parent = freeScroll
+
+local freeStateBtn = Instance.new("TextButton")
+freeStateBtn.Position = UDim2.new(0,0,0,0)
+freeStateBtn.Size = UDim2.new(1,0,0,35)
+freeStateBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+freeStateBtn.Font = Enum.Font.GothamSemibold
+freeStateBtn.TextScaled = true
+freeStateBtn.TextColor3 = Color3.fromRGB(255,255,255)
+freeStateBtn.RichText = true
+freeStateBtn.Text = 'FreeCam: <font color="rgb(255,0,0)">OFF</font>'
+freeStateBtn.Parent = freeScroll
+addHoverEffect(freeStateBtn, freeStateBtn.BackgroundColor3)
+
+local freeStateCorner = Instance.new("UICorner")
+freeStateCorner.CornerRadius = UDim.new(0,8)
+freeStateCorner.Parent = freeStateBtn
+
+State.FreeCamStateBtn = freeStateBtn
+freeStateBtn.MouseButton1Click:Connect(function()
+	setFreeCamEnabled(not State.FreeCam_Enabled)
+end)
+
+local freeSpeedLabel = Instance.new("TextLabel")
+freeSpeedLabel.Position = UDim2.new(0,0,0,45)
+freeSpeedLabel.Size = UDim2.new(0.5,0,0,30)
+freeSpeedLabel.BackgroundTransparency = 1
+freeSpeedLabel.Text = "Speed:"
+freeSpeedLabel.Font = Enum.Font.Gotham
+freeSpeedLabel.TextScaled = true
+freeSpeedLabel.TextColor3 = Color3.fromRGB(230,230,230)
+freeSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+freeSpeedLabel.Parent = freeScroll
+
+local freeSpeedBox = Instance.new("TextBox")
+freeSpeedBox.Position = UDim2.new(0.5,0,0,45)
+freeSpeedBox.Size = UDim2.new(0.5,0,0,30)
+freeSpeedBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+freeSpeedBox.Font = Enum.Font.Gotham
+freeSpeedBox.TextScaled = true
+freeSpeedBox.TextColor3 = Color3.fromRGB(255,255,255)
+freeSpeedBox.PlaceholderText = "1 - 5000"
+freeSpeedBox.Text = tostring(State.FreeCam_Speed)
+freeSpeedBox.Parent = freeScroll
+
+local freeSpeedCorner = Instance.new("UICorner")
+freeSpeedCorner.CornerRadius = UDim.new(0,6)
+freeSpeedCorner.Parent = freeSpeedBox
+
+State.FreeCamSpeedBox = freeSpeedBox
+
+freeSpeedBox.FocusLost:Connect(function()
+	local num = tonumber(freeSpeedBox.Text)
+	if not num then
+		freeSpeedBox.Text = tostring(State.FreeCam_Speed)
+		return
+	end
+	num = math.clamp(num, 0.5, 5000)
+	State.FreeCam_Speed = num
+	freeSpeedBox.Text = tostring(num)
+end)
+
+local freeHotkeyBtn = Instance.new("TextButton")
+freeHotkeyBtn.Position = UDim2.new(0,0,0,85)
+freeHotkeyBtn.Size = UDim2.new(1,0,0,35)
+freeHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+freeHotkeyBtn.Font = Enum.Font.GothamSemibold
+freeHotkeyBtn.TextScaled = true
+freeHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+freeHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
+freeHotkeyBtn.Parent = freeScroll
+addHoverEffect(freeHotkeyBtn, freeHotkeyBtn.BackgroundColor3)
+
+local freeHotkeyCorner = Instance.new("UICorner")
+freeHotkeyCorner.CornerRadius = UDim.new(0,8)
+freeHotkeyCorner.Parent = freeHotkeyBtn
+
+State.FreeCamHotkeyBtn = freeHotkeyBtn
+
+freeHotkeyBtn.MouseButton1Click:Connect(function()
+	State.WaitingForFreeCamHotKey = true
+	freeHotkeyBtn.Text = "HotKey: [Press Key]"
+end)
+
+---------------------------------------------------------
+-- Noclip Window UI
+---------------------------------------------------------
+local noclipTitle = Instance.new("TextLabel")
+noclipTitle.Position = UDim2.new(0,10,0,10)
+noclipTitle.Size = UDim2.new(1,-20,0,25)
+noclipTitle.BackgroundTransparency = 1
+noclipTitle.Text = "Noclip Settings"
+noclipTitle.TextColor3 = Color3.fromRGB(200,200,255)
+noclipTitle.TextScaled = true
+noclipTitle.Font = Enum.Font.GothamBold
+noclipTitle.Parent = noclipWindow
+
+local noclipScroll = Instance.new("ScrollingFrame")
+noclipScroll.Position = UDim2.new(0,10,0,45)
+noclipScroll.Size = UDim2.new(1,-20,1,-55)
+noclipScroll.BackgroundTransparency = 1
+noclipScroll.BorderSizePixel = 0
+noclipScroll.ScrollBarThickness = 4
+noclipScroll.CanvasSize = UDim2.new(0,0,0,100)
+noclipScroll.Parent = noclipWindow
+
+local noclipScrollCorner = Instance.new("UICorner")
+noclipScrollCorner.CornerRadius = UDim.new(0,8)
+noclipScrollCorner.Parent = noclipScroll
+
+local noclipStateBtn = Instance.new("TextButton")
+noclipStateBtn.Position = UDim2.new(0,0,0,0)
+noclipStateBtn.Size = UDim2.new(1,0,0,35)
+noclipStateBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+noclipStateBtn.Font = Enum.Font.GothamSemibold
+noclipStateBtn.TextScaled = true
+noclipStateBtn.TextColor3 = Color3.fromRGB(255,255,255)
+noclipStateBtn.RichText = true
+noclipStateBtn.Text = 'Noclip: <font color="rgb(255,0,0)">OFF</font>'
+noclipStateBtn.Parent = noclipScroll
+addHoverEffect(noclipStateBtn, noclipStateBtn.BackgroundColor3)
+
+local noclipStateCorner = Instance.new("UICorner")
+noclipStateCorner.CornerRadius = UDim.new(0,8)
+noclipStateCorner.Parent = noclipStateBtn
+
+State.NoclipStateBtn = noclipStateBtn
+noclipStateBtn.MouseButton1Click:Connect(toggleNoclip)
+
+local noclipHotkeyBtn = Instance.new("TextButton")
+noclipHotkeyBtn.Position = UDim2.new(0,0,0,45)
+noclipHotkeyBtn.Size = UDim2.new(1,0,0,35)
+noclipHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+noclipHotkeyBtn.Font = Enum.Font.GothamSemibold
+noclipHotkeyBtn.TextScaled = true
+noclipHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+noclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
+noclipHotkeyBtn.Parent = noclipScroll
+addHoverEffect(noclipHotkeyBtn, noclipHotkeyBtn.BackgroundColor3)
+
+local noclipHotkeyCorner = Instance.new("UICorner")
+noclipHotkeyCorner.CornerRadius = UDim.new(0,8)
+noclipHotkeyCorner.Parent = noclipHotkeyBtn
+
+State.NoclipHotkeyBtn = noclipHotkeyBtn
+
+noclipHotkeyBtn.MouseButton1Click:Connect(function()
+	State.WaitingForNoclipHotKey = true
+	noclipHotkeyBtn.Text = "HotKey: [Press Key]"
+end)
+
+---------------------------------------------------------
+-- Teleport Window UI
+---------------------------------------------------------
+local tpTitle = Instance.new("TextLabel")
+tpTitle.Position = UDim2.new(0,10,0,10)
+tpTitle.Size = UDim2.new(1,-20,0,25)
+tpTitle.BackgroundTransparency = 1
+tpTitle.Text = "Teleportation Settings"
+tpTitle.TextColor3 = Color3.fromRGB(200,200,255)
+tpTitle.TextScaled = true
+tpTitle.Font = Enum.Font.GothamBold
+tpTitle.Parent = teleportWindow
+
+local tpScroll = Instance.new("ScrollingFrame")
+tpScroll.Position = UDim2.new(0,10,0,45)
+tpScroll.Size = UDim2.new(1,-20,1,-55)
+tpScroll.BackgroundTransparency = 1
+tpScroll.BorderSizePixel = 0
+tpScroll.ScrollBarThickness = 4
+tpScroll.CanvasSize = UDim2.new(0,0,0,300)
+tpScroll.Parent = teleportWindow
+
+local tpScrollCorner = Instance.new("UICorner")
+tpScrollCorner.CornerRadius = UDim.new(0,8)
+tpScrollCorner.Parent = tpScroll
+
+-- tp [player]
+local tpPlayerLabel = Instance.new("TextLabel")
+tpPlayerLabel.Position = UDim2.new(0,0,0,0)
+tpPlayerLabel.Size = UDim2.new(0.5,0,0,30)
+tpPlayerLabel.BackgroundTransparency = 1
+tpPlayerLabel.Text = "TP to Player:"
+tpPlayerLabel.Font = Enum.Font.Gotham
+tpPlayerLabel.TextScaled = true
+tpPlayerLabel.TextColor3 = Color3.fromRGB(220,220,220)
+tpPlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
+tpPlayerLabel.Parent = tpScroll
+
+local tpPlayerBox = Instance.new("TextBox")
+tpPlayerBox.Position = UDim2.new(0.5,0,0,0)
+tpPlayerBox.Size = UDim2.new(0.5,-60,0,30)
+tpPlayerBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+tpPlayerBox.Text = ""
+tpPlayerBox.PlaceholderText = "Player name"
+tpPlayerBox.Font = Enum.Font.Gotham
+tpPlayerBox.TextScaled = true
+tpPlayerBox.TextColor3 = Color3.fromRGB(255,255,255)
+tpPlayerBox.Parent = tpScroll
+
+local tpPlayerBtn = Instance.new("TextButton")
+tpPlayerBtn.Position = UDim2.new(1,-55,0,0)
+tpPlayerBtn.Size = UDim2.new(0,50,0,30)
+tpPlayerBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+tpPlayerBtn.Text = "TP"
+tpPlayerBtn.Font = Enum.Font.GothamSemibold
+tpPlayerBtn.TextScaled = true
+tpPlayerBtn.TextColor3 = Color3.fromRGB(255,255,255)
+tpPlayerBtn.Parent = tpScroll
+addHoverEffect(tpPlayerBtn, tpPlayerBtn.BackgroundColor3)
+
+local tpPlayerBtnCorner = Instance.new("UICorner")
+tpPlayerBtnCorner.CornerRadius = UDim.new(0,6)
+tpPlayerBtnCorner.Parent = tpPlayerBtn
+
+tpPlayerBtn.MouseButton1Click:Connect(function()
+	teleportToPlayer(tpPlayerBox.Text)
+end)
+
+-- bring [player]
+local bringLabel = Instance.new("TextLabel")
+bringLabel.Position = UDim2.new(0,0,0,40)
+bringLabel.Size = UDim2.new(0.5,0,0,30)
+bringLabel.BackgroundTransparency = 1
+bringLabel.Text = "Bring Player:"
+bringLabel.Font = Enum.Font.Gotham
+bringLabel.TextScaled = true
+bringLabel.TextColor3 = Color3.fromRGB(220,220,220)
+bringLabel.TextXAlignment = Enum.TextXAlignment.Left
+bringLabel.Parent = tpScroll
+
+local bringBox = Instance.new("TextBox")
+bringBox.Position = UDim2.new(0.5,0,0,40)
+bringBox.Size = UDim2.new(0.5,-60,0,30)
+bringBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+bringBox.Text = ""
+bringBox.PlaceholderText = "Player name"
+bringBox.Font = Enum.Font.Gotham
+bringBox.TextScaled = true
+bringBox.TextColor3 = Color3.fromRGB(255,255,255)
+bringBox.Parent = tpScroll
+
+local bringBtn = Instance.new("TextButton")
+bringBtn.Position = UDim2.new(1,-55,0,40)
+bringBtn.Size = UDim2.new(0,50,0,30)
+bringBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+bringBtn.Text = "BRNG"
+bringBtn.Font = Enum.Font.GothamSemibold
+bringBtn.TextScaled = true
+bringBtn.TextColor3 = Color3.fromRGB(255,255,255)
+bringBtn.Parent = tpScroll
+addHoverEffect(bringBtn, bringBtn.BackgroundColor3)
+
+local bringBtnCorner = Instance.new("UICorner")
+bringBtnCorner.CornerRadius = UDim.new(0,6)
+bringBtnCorner.Parent = bringBtn
+
+bringBtn.MouseButton1Click:Connect(function()
+	bringPlayer(bringBox.Text)
+end)
+
+-- to [location]
+local locLabel = Instance.new("TextLabel")
+locLabel.Position = UDim2.new(0,0,0,80)
+locLabel.Size = UDim2.new(0.5,0,0,30)
+locLabel.BackgroundTransparency = 1
+locLabel.Text = "To Location:"
+locLabel.Font = Enum.Font.Gotham
+locLabel.TextScaled = true
+locLabel.TextColor3 = Color3.fromRGB(220,220,220)
+locLabel.TextXAlignment = Enum.TextXAlignment.Left
+locLabel.Parent = tpScroll
+
+local locBox = Instance.new("TextBox")
+locBox.Position = UDim2.new(0.5,0,0,80)
+locBox.Size = UDim2.new(0.5,-60,0,30)
+locBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+locBox.Text = ""
+locBox.PlaceholderText = "Part name"
+locBox.Font = Enum.Font.Gotham
+locBox.TextScaled = true
+locBox.TextColor3 = Color3.fromRGB(255,255,255)
+locBox.Parent = tpScroll
+
+local locBtn = Instance.new("TextButton")
+locBtn.Position = UDim2.new(1,-55,0,80)
+locBtn.Size = UDim2.new(0,50,0,30)
+locBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+locBtn.Text = "GO"
+locBtn.Font = Enum.Font.GothamSemibold
+locBtn.TextScaled = true
+locBtn.TextColor3 = Color3.fromRGB(255,255,255)
+locBtn.Parent = tpScroll
+addHoverEffect(locBtn, locBtn.BackgroundColor3)
+
+local locBtnCorner = Instance.new("UICorner")
+locBtnCorner.CornerRadius = UDim.new(0,6)
+locBtnCorner.Parent = locBtn
+
+locBtn.MouseButton1Click:Connect(function()
+	teleportToLocation(locBox.Text)
+end)
+
+-- Waypoints
+local wpLabel = Instance.new("TextLabel")
+wpLabel.Position = UDim2.new(0,0,0,120)
+wpLabel.Size = UDim2.new(1,0,0,20)
+wpLabel.BackgroundTransparency = 1
+wpLabel.Text = "Waypoints:"
+wpLabel.Font = Enum.Font.GothamSemibold
+wpLabel.TextScaled = true
+wpLabel.TextColor3 = Color3.fromRGB(230,230,255)
+wpLabel.TextXAlignment = Enum.TextXAlignment.Left
+wpLabel.Parent = tpScroll
+
+local wpBox = Instance.new("TextBox")
+wpBox.Position = UDim2.new(0,0,0,145)
+wpBox.Size = UDim2.new(0.6,-5,0,30)
+wpBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+wpBox.Text = ""
+wpBox.PlaceholderText = "Waypoint name"
+wpBox.Font = Enum.Font.Gotham
+wpBox.TextScaled = true
+wpBox.TextColor3 = Color3.fromRGB(255,255,255)
+wpBox.Parent = tpScroll
+
+local wpSaveBtn = Instance.new("TextButton")
+wpSaveBtn.Position = UDim2.new(0.6,5,0,145)
+wpSaveBtn.Size = UDim2.new(0.4,-5,0,30)
+wpSaveBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+wpSaveBtn.Text = "Save WP"
+wpSaveBtn.Font = Enum.Font.GothamSemibold
+wpSaveBtn.TextScaled = true
+wpSaveBtn.TextColor3 = Color3.fromRGB(255,255,255)
+wpSaveBtn.Parent = tpScroll
+addHoverEffect(wpSaveBtn, wpSaveBtn.BackgroundColor3)
+
+local wpSaveCorner = Instance.new("UICorner")
+wpSaveCorner.CornerRadius = UDim.new(0,6)
+wpSaveCorner.Parent = wpSaveBtn
+
+local wpTpBtn = Instance.new("TextButton")
+wpTpBtn.Position = UDim2.new(0,0,0,185)
+wpTpBtn.Size = UDim2.new(0.5,-2,0,30)
+wpTpBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+wpTpBtn.Text = "TP to WP"
+wpTpBtn.Font = Enum.Font.GothamSemibold
+wpTpBtn.TextScaled = true
+wpTpBtn.TextColor3 = Color3.fromRGB(255,255,255)
+wpTpBtn.Parent = tpScroll
+addHoverEffect(wpTpBtn, wpTpBtn.BackgroundColor3)
+
+local wpTpCorner = Instance.new("UICorner")
+wpTpCorner.CornerRadius = UDim.new(0,6)
+wpTpCorner.Parent = wpTpBtn
+
+local wpDelBtn = Instance.new("TextButton")
+wpDelBtn.Position = UDim2.new(0.5,2,0,185)
+wpDelBtn.Size = UDim2.new(0.5,-2,0,30)
+wpDelBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+wpDelBtn.Text = "Delete WP"
+wpDelBtn.Font = Enum.Font.GothamSemibold
+wpDelBtn.TextScaled = true
+wpDelBtn.TextColor3 = Color3.fromRGB(255,255,255)
+wpDelBtn.Parent = tpScroll
+addHoverEffect(wpDelBtn, wpDelBtn.BackgroundColor3)
+
+local wpDelCorner = Instance.new("UICorner")
+wpDelCorner.CornerRadius = UDim.new(0,6)
+wpDelCorner.Parent = wpDelBtn
+
+local wpClearBtn = Instance.new("TextButton")
+wpClearBtn.Position = UDim2.new(0,0,0,225)
+wpClearBtn.Size = UDim2.new(1,0,0,30)
+wpClearBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+wpClearBtn.Text = "Clear All Waypoints"
+wpClearBtn.Font = Enum.Font.GothamSemibold
+wpClearBtn.TextScaled = true
+wpClearBtn.TextColor3 = Color3.fromRGB(255,255,255)
+wpClearBtn.Parent = tpScroll
+addHoverEffect(wpClearBtn, wpClearBtn.BackgroundColor3)
+
+local wpClearCorner = Instance.new("UICorner")
+wpClearCorner.CornerRadius = UDim.new(0,6)
+wpClearCorner.Parent = wpClearBtn
+
+local wpListLabel = Instance.new("TextLabel")
+wpListLabel.Position = UDim2.new(0,0,0,260)
+wpListLabel.Size = UDim2.new(1,0,0,35)
+wpListLabel.BackgroundTransparency = 1
+wpListLabel.Font = Enum.Font.Gotham
+wpListLabel.TextScaled = true
+wpListLabel.TextColor3 = Color3.fromRGB(200,200,200)
+wpListLabel.TextWrapped = true
+wpListLabel.TextXAlignment = Enum.TextXAlignment.Left
+wpListLabel.Text = "Current WPs: (none)"
+wpListLabel.Parent = tpScroll
+
+State.WaypointListLabel = wpListLabel
+
+wpSaveBtn.MouseButton1Click:Connect(function()
+	addWaypoint(wpBox.Text)
+	updateWaypointLabel()
+end)
+
+wpTpBtn.MouseButton1Click:Connect(function()
+	teleportToWaypoint(wpBox.Text)
+end)
+
+wpDelBtn.MouseButton1Click:Connect(function()
+	deleteWaypoint(wpBox.Text)
+	updateWaypointLabel()
+end)
+
+wpClearBtn.MouseButton1Click:Connect(function()
+	clearWaypoints()
+	updateWaypointLabel()
+end)
+
+updateWaypointLabel()
+
+---------------------------------------------------------
+-- ESP Window UI (ساده)
+---------------------------------------------------------
+local espTitle = Instance.new("TextLabel")
+espTitle.Position = UDim2.new(0,10,0,10)
+espTitle.Size = UDim2.new(1,-20,0,25)
+espTitle.BackgroundTransparency = 1
+espTitle.Text = "ESP Settings"
+espTitle.TextColor3 = Color3.fromRGB(200,200,255)
+espTitle.TextScaled = true
+espTitle.Font = Enum.Font.GothamBold
+espTitle.Parent = espWindow
+
+local espScroll = Instance.new("ScrollingFrame")
+espScroll.Position = UDim2.new(0,10,0,45)
+espScroll.Size = UDim2.new(1,-20,1,-55)
+espScroll.BackgroundTransparency = 1
+espScroll.BorderSizePixel = 0
+espScroll.ScrollBarThickness = 4
+espScroll.CanvasSize = UDim2.new(0,0,0,150)
+espScroll.Parent = espWindow
+
+local espScrollCorner = Instance.new("UICorner")
+espScrollCorner.CornerRadius = UDim.new(0,8)
+espScrollCorner.Parent = espScroll
+
+local espStateBtn = Instance.new("TextButton")
+espStateBtn.Position = UDim2.new(0,0,0,0)
+espStateBtn.Size = UDim2.new(1,0,0,35)
+espStateBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+espStateBtn.Font = Enum.Font.GothamSemibold
+espStateBtn.TextScaled = true
+espStateBtn.TextColor3 = Color3.fromRGB(255,255,255)
+espStateBtn.RichText = true
+espStateBtn.Text = 'ESP: <font color="rgb(255,0,0)">OFF</font>'
+espStateBtn.Parent = espScroll
+addHoverEffect(espStateBtn, espStateBtn.BackgroundColor3)
+
+local espStateCorner = Instance.new("UICorner")
+espStateCorner.CornerRadius = UDim.new(0,8)
+espStateCorner.Parent = espStateBtn
+
+State.ESPStateBtn = espStateBtn
+espStateBtn.MouseButton1Click:Connect(toggleESP)
+
+-- انتخاب رنگ ساده (چند رنگ ثابت)
+local colors = {
+	{ name = "BLUE",  color = Color3.fromRGB(0,170,255) },
+	{ name = "RED",   color = Color3.fromRGB(255,0,0) },
+	{ name = "GREEN", color = Color3.fromRGB(0,255,0) },
+	{ name = "YELLOW",color = Color3.fromRGB(255,255,0) },
+	{ name = "PINK",  color = Color3.fromRGB(255,0,132) },
+}
+local colorIndex = 1
+
+local espColorBtn = Instance.new("TextButton")
+espColorBtn.Position = UDim2.new(0,0,0,45)
+espColorBtn.Size = UDim2.new(1,0,0,35)
+espColorBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+espColorBtn.Font = Enum.Font.GothamSemibold
+espColorBtn.TextScaled = true
+espColorBtn.TextColor3 = Color3.fromRGB(255,255,255)
+espColorBtn.RichText = true
+espColorBtn.Parent = espScroll
+addHoverEffect(espColorBtn, espColorBtn.BackgroundColor3)
+
+local espColorCorner = Instance.new("UICorner")
+espColorCorner.CornerRadius = UDim.new(0,8)
+espColorCorner.Parent = espColorBtn
+
+State.ESPColorBtn = espColorBtn
+
+local function updateESPColorBtn()
+	local opt = colors[colorIndex]
+	State.ESP_Color = opt.color
+	for _,h in pairs(State.Highlights) do
+		if h then h.FillColor = opt.color end
+	end
+	local r = math.floor(opt.color.R*255)
+	local g = math.floor(opt.color.G*255)
+	local b = math.floor(opt.color.B*255)
+	espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">%s</font>', r,g,b,opt.name)
+end
+
+updateESPColorBtn()
+
+espColorBtn.MouseButton1Click:Connect(function()
+	colorIndex = colorIndex + 1
+	if colorIndex > #colors then colorIndex = 1 end
+	updateESPColorBtn()
+end)
+
+---------------------------------------------------------
+-- Dex++ Window UI
+---------------------------------------------------------
+local dexTitle = Instance.new("TextLabel")
+dexTitle.Position = UDim2.new(0,10,0,10)
+dexTitle.Size = UDim2.new(1,-20,0,25)
+dexTitle.BackgroundTransparency = 1
+dexTitle.Text = "Dex++ Settings"
+dexTitle.TextColor3 = Color3.fromRGB(200,200,255)
+dexTitle.TextScaled = true
+dexTitle.Font = Enum.Font.GothamBold
+dexTitle.Parent = dexWindow
+
+local dexBtn = Instance.new("TextButton")
+dexBtn.Position = UDim2.new(0,10,0,50)
+dexBtn.Size = UDim2.new(1,-20,0,35)
+dexBtn.BackgroundColor3 = DexColors.BaseGray
+dexBtn.Font = Enum.Font.GothamSemibold
+dexBtn.TextScaled = true
+dexBtn.TextColor3 = Color3.fromRGB(255,255,255)
+dexBtn.Text = "Open"
+dexBtn.Parent = dexWindow
+addHoverEffect(dexBtn, DexColors.BaseGray)
+
+local dexBtnCorner = Instance.new("UICorner")
+dexBtnCorner.CornerRadius = UDim.new(0,8)
+dexBtnCorner.Parent = dexBtn
+
+State.Dex_Button = dexBtn
+dexBtn.MouseButton1Click:Connect(handleDexButtonClick)
+
+---------------------------------------------------------
+-- دکمه‌های پنجره اصلی (به ترتیبی که گفتی)
+---------------------------------------------------------
+local y = 0
+local function createMainButton(text, color, callback)
+	local btn = Instance.new("TextButton")
+	btn.Position = UDim2.new(0,0,0,y)
+	btn.Size = UDim2.new(1,0,0,40)
+	btn.Font = Enum.Font.GothamSemibold
+	btn.TextScaled = true
+	btn.TextColor3 = Color3.fromRGB(255,255,255)
+	btn.Text = text
+	btn.Parent = mainScroll
+	addHoverEffect(btn, color)
+	btn.BackgroundColor3 = color
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0,8)
+	c.Parent = btn
+
+	y = y + 50
+
+	if callback then
+		btn.MouseButton1Click:Connect(callback)
+	end
+
+	return btn
+end
+
+local flyPanelVisible = false
+local noclipPanelVisible = false
+local teleportPanelVisible = false
+local espPanelVisible = false
+local dexPanelVisible = false
+local freeCamPanelVisible = false
+
+-- Fly
+createMainButton("Fly", grayBtnColor, function()
+	flyPanelVisible = not flyPanelVisible
+	flyWindow.Visible = flyPanelVisible
+	stackSettingsWindows()
+end)
+
+-- Noclip
+createMainButton("Noclip", grayBtnColor, function()
+	noclipPanelVisible = not noclipPanelVisible
+	noclipWindow.Visible = noclipPanelVisible
+	stackSettingsWindows()
+end)
+
+-- Teleportation
+createMainButton("Teleportation", grayBtnColor, function()
+	teleportPanelVisible = not teleportPanelVisible
+	teleportWindow.Visible = teleportPanelVisible
+	stackSettingsWindows()
+end)
+
+-- ESP
+createMainButton("ESP", grayBtnColor, function()
+	espPanelVisible = not espPanelVisible
+	espWindow.Visible = espPanelVisible
+	stackSettingsWindows()
+end)
+
+-- DEX
+createMainButton("DEX", grayBtnColor, function()
+	dexPanelVisible = not dexPanelVisible
+	dexWindow.Visible = dexPanelVisible
+	stackSettingsWindows()
+end)
+
+-- FreeCam
+createMainButton("FreeCam", grayBtnColor, function()
+	freeCamPanelVisible = not freeCamPanelVisible
+	freeCamWindow.Visible = freeCamPanelVisible
+	stackSettingsWindows()
+end)
+
+-- Coming Soon
+local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
+State.ComingSoonBtn = comingBtn
+
+---------------------------------------------------------
+-- پایان لود و حذف پنل Loading
+---------------------------------------------------------
+setLoadingProgress(100)
+task.delay(0.7, function()
+	if loadingGui then
+		loadingGui:Destroy()
+	end
+end)
