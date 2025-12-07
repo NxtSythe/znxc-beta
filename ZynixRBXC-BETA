@@ -27,7 +27,7 @@ local State = {
 	Highlights = {},
 
 	Fly_Enabled = false,
-	Fly_Speed = 50,
+	Fly_Speed = 1, -- دیفالت 1
 	Fly_BV = nil,
 	Fly_BG = nil,
 	Fly_Control = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0},
@@ -38,7 +38,7 @@ local State = {
 	Fly_HotKeyName = "G",
 
 	FreeCam_Enabled = false,
-	FreeCam_Speed = 50,
+	FreeCam_Speed = 1, -- دیفالت 1
 	FreeCam_HotKey = Enum.KeyCode.F,
 	FreeCam_HotKeyName = "F",
 	FreeCam_MoveDir = Vector3.zero,
@@ -84,6 +84,8 @@ local State = {
 	ESPColorBtn = nil,
 	ComingSoonBtn = nil,
 	WaypointListLabel = nil,
+
+	MainCollapsed = false, -- برای Inspect
 }
 
 ---------------------------------------------------------
@@ -265,7 +267,6 @@ end
 
 -- RESET ESP: Destroy همه و ساخت دوباره برای همه پلیرها
 local function resetESP()
-	-- پاک کردن هایلایت‌های قبلی
 	for p, h in pairs(State.Highlights) do
 		if h then
 			h:Destroy()
@@ -273,7 +274,6 @@ local function resetESP()
 		State.Highlights[p] = nil
 	end
 
-	-- ساخت Highlight جدید برای همه پلیرهای فعلی
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= localPlayer then
 			applyESPToPlayer(p)
@@ -874,7 +874,7 @@ title.Size = UDim2.new(1,-20,0,30)
 title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- قهوه‌ای
 title.BackgroundTransparency = 0 -- اوپسیتی 100
 title.Text = "Zynix RBXC [BETA]"
-title.TextColor3 = Color3.fromRGB(255,180,80)
+title.TextColor3 = Color3.fromRGB(120,120,120) -- شروع طوسی
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -885,8 +885,24 @@ titleCorner.Parent = title
 
 local titleStroke = Instance.new("UIStroke")
 titleStroke.Thickness = 1.3
-titleStroke.Color = Color3.fromRGB(255,140,0)
+titleStroke.Color = Color3.fromRGB(255,140,0) -- استروک نارنجی روی بک‌گراند
 titleStroke.Parent = title
+
+-- دکمه Inspect
+local inspectBtn = Instance.new("TextButton")
+inspectBtn.Size = UDim2.new(0, 70, 0, 24)
+inspectBtn.Position = UDim2.new(1, -80, 0, 12)
+inspectBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+inspectBtn.TextColor3 = Color3.fromRGB(255,255,255)
+inspectBtn.TextScaled = true
+inspectBtn.Font = Enum.Font.GothamSemibold
+inspectBtn.Text = "Inspect"
+inspectBtn.Parent = mainWindow
+addHoverEffect(inspectBtn, inspectBtn.BackgroundColor3)
+
+local inspectCorner = Instance.new("UICorner")
+inspectCorner.CornerRadius = UDim.new(0,6)
+inspectCorner.Parent = inspectBtn
 
 -- User label (Creator حذف شد)
 local userLabel = Instance.new("TextLabel")
@@ -912,6 +928,31 @@ mainScroll.Parent = mainWindow
 local mainScrollCorner = Instance.new("UICorner")
 mainScrollCorner.CornerRadius = UDim.new(0,8)
 mainScrollCorner.Parent = mainScroll
+
+-- عملکرد Inspect: hide / reveal منو
+inspectBtn.MouseButton1Click:Connect(function()
+	State.MainCollapsed = not State.MainCollapsed
+	userLabel.Visible = not State.MainCollapsed
+	mainScroll.Visible = not State.MainCollapsed
+	if State.MainCollapsed then
+		inspectBtn.Text = "Reveal"
+	else
+		inspectBtn.Text = "Inspect"
+	end
+end)
+
+-- انیمیشن رنگ متن عنوان بین طوسی و مشکی
+do
+	local grayColor = Color3.fromRGB(120,120,120)
+	local blackColor = Color3.fromRGB(0,0,0)
+	RunService.Heartbeat:Connect(function()
+		if title and title.Parent then
+			local t = tick()
+			local alpha = (math.sin(t * 1.2) + 1) / 2 -- 0 تا 1
+			title.TextColor3 = grayColor:Lerp(blackColor, alpha)
+		end
+	end)
+end
 
 ---------------------------------------------------------
 -- پنجره‌های تنظیمات
@@ -1079,7 +1120,7 @@ flyHotkeyBtn.MouseButton1Click:Connect(function()
 end)
 
 ---------------------------------------------------------
--- FreeCam Window
+-- FreeCam Window UI
 ---------------------------------------------------------
 local freeTitle = Instance.new("TextLabel")
 freeTitle.Position = UDim2.new(0,10,0,10)
@@ -1279,7 +1320,6 @@ local tpScrollCorner = Instance.new("UICorner")
 tpScrollCorner.CornerRadius = UDim.new(0,8)
 tpScrollCorner.Parent = tpScroll
 
--- tp [player]
 local tpPlayerLabel = Instance.new("TextLabel")
 tpPlayerLabel.Position = UDim2.new(0,0,0,0)
 tpPlayerLabel.Size = UDim2.new(0.5,0,0,30)
@@ -1321,7 +1361,6 @@ tpPlayerBtn.MouseButton1Click:Connect(function()
 	teleportToPlayer(tpPlayerBox.Text)
 end)
 
--- bring [player]
 local bringLabel = Instance.new("TextLabel")
 bringLabel.Position = UDim2.new(0,0,0,40)
 bringLabel.Size = UDim2.new(0.5,0,0,30)
@@ -1363,7 +1402,6 @@ bringBtn.MouseButton1Click:Connect(function()
 	bringPlayer(bringBox.Text)
 end)
 
--- to [location]
 local locLabel = Instance.new("TextLabel")
 locLabel.Position = UDim2.new(0,0,0,80)
 locLabel.Size = UDim2.new(0.5,0,0,30)
@@ -1405,7 +1443,6 @@ locBtn.MouseButton1Click:Connect(function()
 	teleportToLocation(locBox.Text)
 end)
 
--- Waypoints
 local wpLabel = Instance.new("TextLabel")
 wpLabel.Position = UDim2.new(0,0,0,120)
 wpLabel.Size = UDim2.new(1,0,0,20)
