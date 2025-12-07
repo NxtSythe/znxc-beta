@@ -15,7 +15,7 @@ local RANK_TAG = "szynixnghsh.Owner"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
 -- esp, freecam, fly, teleport, noclip, setting
-local OFF_TAG = "szynixoff.none"
+local OFF_TAG = "szynixoff.noclip"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
 for part in string.gmatch(offRaw, "[^,]+") do
