@@ -8,14 +8,14 @@ local PIN_TAG = "szynixloader.b1uu1x1ld1"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
-local NAME_TAG = "szynixesm.None"
+local NAME_TAG = "szynixesm.Guest"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
 local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
 -- esp, freecam, fly, teleport, noclip, setting
-local OFF_TAG = "szynixoff.noclip,teleport,freecam,setting"
+local OFF_TAG = "szynixoff.noclip,fly,teleport,setting"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
 for part in string.gmatch(offRaw, "[^,]+") do
@@ -283,7 +283,7 @@ local function createLoadingGui()
 
 	local function handleSuccess()
 		status.TextColor3 = Color3.fromRGB(0,255,0)
-		status.Text = "Welcome!"
+		status.Text = "Successful!"
 		pinBox.Visible = false
 		pinLabel.Visible = false
 		confirmBtn.Visible = false
@@ -1192,13 +1192,13 @@ local rankToShow = CONFIG_RANK or "Member"
 local rankColor = Color3.fromRGB(160,130,80) -- default (Member توسی)
 local rankLower = rankToShow:lower()
 if rankLower == "owner" then
-	rankColor = Color3.fromRGB(0,170,255) -- RGB-ish
+	rankColor = Color3.fromRGB(139,0,0) -- RGB-ish
 elseif rankLower == "admin" then
-	rankColor = Color3.fromRGB(255,0,0)
+	rankColor = Color3.fromRGB(195,15,22)
 elseif rankLower == "vip" then
-	rankColor = Color3.fromRGB(0,255,0)
+	rankColor = Color3.fromRGB(0,191,0)
 elseif rankLower == "member" then
-	rankColor = Color3.fromRGB(160,130,80)
+	rankColor = Color3.fromRGB(113,113,111)
 end
 
 local rR = math.floor(rankColor.R * 255)
