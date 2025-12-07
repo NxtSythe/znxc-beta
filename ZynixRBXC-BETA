@@ -1,6 +1,6 @@
 -- Zynix RBXC [BETA] - Single Script
 -- Fly speed via textbox (0.5 - 5000)
--- ESP + FreeCam + Noclip + Teleport
+-- ESP + FreeCam + Noclip + Teleport + Settings (Hide key + Config save/load + PIN gate)
 
 --// Services
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -54,6 +55,11 @@ local State = {
 	Noclip_HotKeyName = "None",
 	Noclip_Conn = nil,
 
+	-- Hide UI
+	Hide_HotKey = Enum.KeyCode.Insert,
+	Hide_HotKeyName = "Insert",
+	WaitingForHideHotKey = false,
+
 	Teleport_Waypoints = {},
 
 	-- Hotkey waiting flags
@@ -68,6 +74,7 @@ local State = {
 	FreeCam_Window = nil,
 	Noclip_Window = nil,
 	Teleport_Window = nil,
+	Settings_Window = nil,
 
 	FlyStateBtn = nil,
 	FlySpeedBox = nil,
@@ -84,10 +91,13 @@ local State = {
 	ESPColorBtn = nil,
 	ComingSoonBtn = nil,
 	WaypointListLabel = nil,
+
+	HideHotkeyBtn = nil,
+	ConfigNameBox = nil,
 }
 
 ---------------------------------------------------------
--- Helper functions
+-- Helper functions عمومی
 ---------------------------------------------------------
 local function addHoverEffect(button, baseColor)
 	button.AutoButtonColor = false
@@ -130,20 +140,24 @@ local function findPlayerByName(partial)
 end
 
 ---------------------------------------------------------
--- Loading Panel (وسط صفحه، انیمیشن Loading. .. ...)
+-- Loading + PIN GUI (وسط صفحه)
 ---------------------------------------------------------
 local function createLoadingGui()
+	-- PIN را اینجا عوض کن (فقط بخش بعد از نقطه)
+	local PIN_TAG = "szynixloader.7392"
+	local CORRECT_PIN = PIN_TAG:match("szynixloader%.(.+)")
+
 	local loadingGui = Instance.new("ScreenGui")
 	loadingGui.Name = "ZynixLoading"
 	loadingGui.ResetOnSpawn = false
 	loadingGui.Parent = playerGui
 
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 260, 0, 100)
+	frame.Size = UDim2.new(0, 280, 0, 140)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Position = UDim2.new(0.5, 0, 0.5, 0)
 	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	frame.BackgroundTransparency = 0.3 -- حدوداً اوپسیتی 70%
+	frame.BackgroundTransparency = 0.3 -- ~70% اوپسیتی
 	frame.BorderSizePixel = 0
 	frame.Parent = loadingGui
 
@@ -167,40 +181,126 @@ local function createLoadingGui()
 	title.Text = "Zynix RBXC [BETA]"
 	title.Parent = frame
 
+	local pinLabel = Instance.new("TextLabel")
+	pinLabel.BackgroundTransparency = 1
+	pinLabel.Size = UDim2.new(1, -20, 0, 20)
+	pinLabel.Position = UDim2.new(0,10,0,46)
+	pinLabel.Font = Enum.Font.Gotham
+	pinLabel.TextScaled = true
+	pinLabel.TextColor3 = Color3.fromRGB(220,220,220)
+	pinLabel.TextXAlignment = Enum.TextXAlignment.Left
+	pinLabel.Text = "Enter PIN:"
+	pinLabel.Parent = frame
+
+	local pinBox = Instance.new("TextBox")
+	pinBox.Size = UDim2.new(1, -20, 0, 24)
+	pinBox.Position = UDim2.new(0,10,0,70)
+	pinBox.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	pinBox.Text = ""
+	pinBox.PlaceholderText = "PIN"
+	pinBox.Font = Enum.Font.Gotham
+	pinBox.TextScaled = true
+	pinBox.TextColor3 = Color3.fromRGB(255,255,255)
+	pinBox.ClearTextOnFocus = false
+	pinBox.Parent = frame
+
+	local pinCorner = Instance.new("UICorner")
+	pinCorner.CornerRadius = UDim.new(0, 6)
+	pinCorner.Parent = pinBox
+
+	local confirmBtn = Instance.new("TextButton")
+	confirmBtn.Size = UDim2.new(0.5, -15, 0, 26)
+	confirmBtn.Position = UDim2.new(0,10,0,100)
+	confirmBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+	confirmBtn.Font = Enum.Font.GothamSemibold
+	confirmBtn.TextScaled = true
+	confirmBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	confirmBtn.Text = "Confirm"
+	confirmBtn.Parent = frame
+	addHoverEffect(confirmBtn, confirmBtn.BackgroundColor3)
+
+	local confirmCorner = Instance.new("UICorner")
+	confirmCorner.CornerRadius = UDim.new(0, 6)
+	confirmCorner.Parent = confirmBtn
+
 	local status = Instance.new("TextLabel")
 	status.BackgroundTransparency = 1
-	status.Size = UDim2.new(1, -20, 0, 40)
-	status.Position = UDim2.new(0,10,0,50)
+	status.Size = UDim2.new(0.5, -15, 0, 26)
+	status.Position = UDim2.new(0.5,5,0,100)
 	status.Font = Enum.Font.Gotham
 	status.TextScaled = true
 	status.TextColor3 = Color3.fromRGB(255,255,255)
 	status.TextXAlignment = Enum.TextXAlignment.Center
-	status.Text = "Loading..."
+	status.Text = ""
 	status.Parent = frame
 
-	local animRunning = true
+	local animRunning = false
 
-	task.spawn(function()
-		local dots = 0
-		while animRunning do
-			dots = (dots % 3) + 1
-			status.Text = "Loading" .. string.rep(".", dots)
-			task.wait(0.4)
-		end
-	end)
+	local function startLoadingAnimation()
+		if animRunning then return end
+		animRunning = true
+		task.spawn(function()
+			local dots = 0
+			while animRunning do
+				dots = (dots % 3) + 1
+				status.TextColor3 = Color3.fromRGB(255,255,255)
+				status.Text = "Loading" .. string.rep(".", dots)
+				task.wait(0.4)
+			end
+		end)
+	end
 
-	local function finishLoading(text, color)
-		animRunning = false
-		status.Text = text or "Loaded!"
-		if color then
-			status.TextColor3 = color
+	local function handleSuccess()
+		status.TextColor3 = Color3.fromRGB(0,255,0)
+		status.Text = "Welcome!"
+		pinBox.Visible = false
+		pinLabel.Visible = false
+		confirmBtn.Visible = false
+
+		task.spawn(function()
+			task.wait(0.8)
+			startLoadingAnimation()
+			-- شبیه‌سازی لود
+			task.wait(2)
+			animRunning = false
+			status.TextColor3 = Color3.fromRGB(0,255,0)
+			status.Text = "Loaded!"
+
+			task.wait(2)
+			-- صبر تا mainWindow ساخته بشه
+			while not State.MainWindow do
+				task.wait(0.1)
+			end
+
+			if loadingGui then
+				loadingGui:Destroy()
+			end
+			if State.MainWindow then
+				State.MainWindow.Visible = true
+			end
+		end)
+	end
+
+	local function handlePin()
+		local txt = tostring(pinBox.Text or "")
+		if txt == CORRECT_PIN then
+			handleSuccess()
+		else
+			status.TextColor3 = Color3.fromRGB(255,0,0)
+			status.Text = "PIN is wrong!"
+			pinBox.Text = ""
 		end
 	end
 
-	return loadingGui, finishLoading
+	confirmBtn.MouseButton1Click:Connect(handlePin)
+	pinBox.FocusLost:Connect(function(enter)
+		if enter then
+			handlePin()
+		end
+	end)
 end
 
-local loadingGui, finishLoading = createLoadingGui()
+createLoadingGui()
 
 ---------------------------------------------------------
 -- تابع رنگ فعلی ESP (برای Rainbow)
@@ -279,7 +379,7 @@ local function resetESP()
 	end
 end
 
--- نوتیف جوین
+-- نوتیف جوین پایین راست
 local function showJoinNotification(playerName)
 	local notifGui = Instance.new("ScreenGui")
 	notifGui.Name = "ZynixJoinNotification"
@@ -328,6 +428,55 @@ local function showJoinNotification(playerName)
 			frame,
 			TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
 			{ Position = UDim2.new(1, 280, 1, -20), BackgroundTransparency = 1 }
+		)
+		tweenOut:Play()
+		tweenOut.Completed:Wait()
+		notifGui:Destroy()
+	end)
+end
+
+-- نوتیف وسط صفحه (برای لود کانفیگ)
+local function showCenterNotification(text, color)
+	local notifGui = Instance.new("ScreenGui")
+	notifGui.Name = "ZynixCenterNotification"
+	notifGui.ResetOnSpawn = false
+	notifGui.Parent = playerGui
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 260, 0, 70)
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	frame.BackgroundTransparency = 0.3
+	frame.BorderSizePixel = 0
+	frame.Parent = notifGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1.5
+	stroke.Color = color or Color3.fromRGB(0, 255, 0)
+	stroke.Parent = frame
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, -20, 1, -20)
+	label.Position = UDim2.new(0,10,0,10)
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.TextColor3 = color or Color3.fromRGB(0,255,0)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.Text = text
+	label.Parent = frame
+
+	task.spawn(function()
+		task.wait(2.5)
+		local tweenOut = TweenService:Create(
+			frame,
+			TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+			{ BackgroundTransparency = 1 }
 		)
 		tweenOut:Play()
 		tweenOut.Completed:Wait()
@@ -738,14 +887,198 @@ local function toggleNoclip()
 end
 
 ---------------------------------------------------------
+-- Config Save / Load
+---------------------------------------------------------
+local CONFIG_FOLDER = "ZynixRBXC"
+
+local function ensureConfigFolder()
+	if makefolder and isfolder then
+		if not isfolder(CONFIG_FOLDER) then
+			makefolder(CONFIG_FOLDER)
+		end
+	end
+end
+
+local function keycodeFromName(name)
+	if not name or name == "None" then return nil end
+	for _, kc in ipairs(Enum.KeyCode:GetEnumItems()) do
+		if kc.Name == name then
+			return kc
+		end
+	end
+	return nil
+end
+
+-- این دو متغیر بعداً داخل ESP استفاده می‌شن، اینجا فوروارد دکلر می‌کنیم
+local colors
+local colorIndex
+local updateESPColorBtn
+
+local function buildConfig()
+	return {
+		Fly_Speed = State.Fly_Speed,
+		FreeCam_Speed = State.FreeCam_Speed,
+
+		Fly_HotKey = State.Fly_HotKeyName,
+		FreeCam_HotKey = State.FreeCam_HotKeyName,
+		Noclip_HotKey = State.Noclip_HotKeyName,
+		Hide_HotKey = State.Hide_HotKeyName,
+
+		ESP_ColorIndex = colorIndex or 1,
+		ESP_Rainbow = State.ESP_Rainbow,
+	}
+end
+
+local function applyConfig(cfg)
+	if type(cfg) ~= "table" then return end
+
+	if cfg.Fly_Speed then
+		State.Fly_Speed = cfg.Fly_Speed
+		if State.FlySpeedBox then
+			State.FlySpeedBox.Text = tostring(cfg.Fly_Speed)
+		end
+	end
+
+	if cfg.FreeCam_Speed then
+		State.FreeCam_Speed = cfg.FreeCam_Speed
+		if State.FreeCamSpeedBox then
+			State.FreeCamSpeedBox.Text = tostring(cfg.FreeCam_Speed)
+		end
+	end
+
+	if cfg.Fly_HotKey then
+		local kc = keycodeFromName(cfg.Fly_HotKey)
+		State.Fly_HotKey = kc
+		State.Fly_HotKeyName = cfg.Fly_HotKey
+		if State.FlyHotkeyBtn then
+			State.FlyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
+		end
+	end
+
+	if cfg.FreeCam_HotKey then
+		local kc = keycodeFromName(cfg.FreeCam_HotKey)
+		State.FreeCam_HotKey = kc
+		State.FreeCam_HotKeyName = cfg.FreeCam_HotKey
+		if State.FreeCamHotkeyBtn then
+			State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
+		end
+	end
+
+	if cfg.Noclip_HotKey then
+		local kc = keycodeFromName(cfg.Noclip_HotKey)
+		State.Noclip_HotKey = kc
+		State.Noclip_HotKeyName = cfg.Noclip_HotKey
+		if State.NoclipHotkeyBtn then
+			State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
+		end
+	end
+
+	if cfg.Hide_HotKey then
+		local kc = keycodeFromName(cfg.Hide_HotKey)
+		State.Hide_HotKey = kc
+		State.Hide_HotKeyName = cfg.Hide_HotKey
+		if State.HideHotkeyBtn then
+			State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
+		end
+	end
+
+	if cfg.ESP_ColorIndex and colors and colors[cfg.ESP_ColorIndex] then
+		colorIndex = cfg.ESP_ColorIndex
+		if updateESPColorBtn then
+			updateESPColorBtn()
+		end
+	end
+end
+
+local function saveConfig()
+	if not writefile or not readfile or not makefolder or not isfolder or not isfile then
+		showCenterNotification("File API not supported!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	ensureConfigFolder()
+	local name = "default"
+	if State.ConfigNameBox then
+		local txt = State.ConfigNameBox.Text
+		if txt and txt ~= "" then
+			name = txt
+		end
+	end
+
+	local path = CONFIG_FOLDER .. "/" .. name .. ".json"
+	local cfg = buildConfig()
+	local ok, enc = pcall(function()
+		return HttpService:JSONEncode(cfg)
+	end)
+
+	if not ok then
+		showCenterNotification("Failed to save config!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	local s, err = pcall(function()
+		writefile(path, enc)
+	end)
+
+	if s then
+		showCenterNotification("Config saved!", Color3.fromRGB(0,255,0))
+	else
+		showCenterNotification("Save failed!", Color3.fromRGB(255,0,0))
+	end
+end
+
+local function loadConfig()
+	if not writefile or not readfile or not makefolder or not isfolder or not isfile then
+		showCenterNotification("File API not supported!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	ensureConfigFolder()
+	local name = "default"
+	if State.ConfigNameBox then
+		local txt = State.ConfigNameBox.Text
+		if txt and txt ~= "" then
+			name = txt
+		end
+	end
+
+	local path = CONFIG_FOLDER .. "/" .. name .. ".json"
+	if not isfile(path) then
+		showCenterNotification("Config not found!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	local ok, content = pcall(function()
+		return readfile(path)
+	end)
+	if not ok then
+		showCenterNotification("Read failed!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	local ok2, decoded = pcall(function()
+		return HttpService:JSONDecode(content)
+	end)
+	if not ok2 then
+		showCenterNotification("Invalid config!", Color3.fromRGB(255,0,0))
+		return
+	end
+
+	applyConfig(decoded)
+	showCenterNotification("Config loaded successfully!", Color3.fromRGB(0,255,0))
+end
+
+---------------------------------------------------------
 -- UI ساخت اصلی
 ---------------------------------------------------------
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
+local blueBtnColor = Color3.fromRGB(0,110,220)
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.Enabled = true -- با Hide key کنترل میشه
 ScreenGui.Parent = playerGui
 
 -- پنجره اصلی
@@ -756,7 +1089,7 @@ mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 mainWindow.BackgroundTransparency = 0.3 -- اوپسیتی ~70%
 mainWindow.Active = true
 mainWindow.Draggable = true
-mainWindow.Visible = false -- بعد از لودینگ
+mainWindow.Visible = false -- بعد از PIN و لودینگ نمایش داده میشه
 mainWindow.Parent = ScreenGui
 State.MainWindow = mainWindow
 
@@ -793,7 +1126,7 @@ titleStroke.Parent = title
 
 -- Glow سبک برای خود متن
 title.TextStrokeColor3 = Color3.fromRGB(255,255,255)
-title.TextStrokeTransparency = 0.6 -- نور ملایم، سنگین نیست
+title.TextStrokeTransparency = 0.6 -- نور ملایم
 
 -- User label
 local userLabel = Instance.new("TextLabel")
@@ -813,7 +1146,7 @@ mainScroll.Size = UDim2.new(1,-20,1,-90)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
 mainScroll.ScrollBarThickness = 4
-mainScroll.CanvasSize = UDim2.new(0,0,0,300)
+mainScroll.CanvasSize = UDim2.new(0,0,0,350)
 mainScroll.Parent = mainWindow
 
 local mainScrollCorner = Instance.new("UICorner")
@@ -848,12 +1181,14 @@ local espWindow = createSettingsWindow("ESPWindow", 230, 240)
 local noclipWindow = createSettingsWindow("NoclipWindow", 230, 160)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow = createSettingsWindow("FreeCamWindow", 230, 200)
+local settingsWindow = createSettingsWindow("SettingsWindow", 230, 200)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
 State.Noclip_Window = noclipWindow
 State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
+State.Settings_Window = settingsWindow
 
 local function stackSettingsWindows()
 	local basePos = mainWindow.Position
@@ -874,6 +1209,7 @@ local function stackSettingsWindows()
 	if teleportWindow.Visible then place(teleportWindow) end
 	if espWindow.Visible then place(espWindow) end
 	if freeCamWindow.Visible then place(freeCamWindow) end
+	if settingsWindow.Visible then place(settingsWindow) end
 end
 
 mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
@@ -1471,14 +1807,14 @@ State.ESPStateBtn = espStateBtn
 espStateBtn.MouseButton1Click:Connect(toggleESP)
 
 -- رنگ‌های ESP: Red, Dark Red, Yellow, White, Rainbow
-local colors = {
+colors = {
 	{ name = "RED",       color = Color3.fromRGB(255,0,0) },
 	{ name = "DARK RED",  color = Color3.fromRGB(150,0,0) },
 	{ name = "YELLOW",    color = Color3.fromRGB(255,255,0) },
 	{ name = "WHITE",     color = Color3.fromRGB(255,255,255) },
 	{ name = "RAINBOW",   rainbow = true },
 }
-local colorIndex = 1
+colorIndex = 1
 
 local espColorBtn = Instance.new("TextButton")
 espColorBtn.Position = UDim2.new(0,0,0,45)
@@ -1497,7 +1833,7 @@ espColorCorner.Parent = espColorBtn
 
 State.ESPColorBtn = espColorBtn
 
-local function updateESPColorBtn()
+updateESPColorBtn = function()
 	local opt = colors[colorIndex]
 	State.ESP_Rainbow = opt.rainbow == true
 
@@ -1549,6 +1885,131 @@ resetESPCorner.Parent = resetESPBtn
 resetESPBtn.MouseButton1Click:Connect(resetESP)
 
 ---------------------------------------------------------
+-- Settings Window UI (Hide key + Config)
+---------------------------------------------------------
+local setTitle = Instance.new("TextLabel")
+setTitle.Position = UDim2.new(0,10,0,10)
+setTitle.Size = UDim2.new(1,-20,0,25)
+setTitle.BackgroundTransparency = 1
+setTitle.Text = "Settings"
+setTitle.TextColor3 = Color3.fromRGB(200,200,255)
+setTitle.TextScaled = true
+setTitle.Font = Enum.Font.GothamBold
+setTitle.Parent = settingsWindow
+
+local setScroll = Instance.new("ScrollingFrame")
+setScroll.Position = UDim2.new(0,10,0,45)
+setScroll.Size = UDim2.new(1,-20,1,-55)
+setScroll.BackgroundTransparency = 1
+setScroll.BorderSizePixel = 0
+setScroll.ScrollBarThickness = 4
+setScroll.CanvasSize = UDim2.new(0,0,0,180)
+setScroll.Parent = settingsWindow
+
+local setScrollCorner = Instance.new("UICorner")
+setScrollCorner.CornerRadius = UDim.new(0,8)
+setScrollCorner.Parent = setScroll
+
+-- Hide HotKey
+local hideLabel = Instance.new("TextLabel")
+hideLabel.Position = UDim2.new(0,0,0,0)
+hideLabel.Size = UDim2.new(0.5,0,0,30)
+hideLabel.BackgroundTransparency = 1
+hideLabel.Text = "Hide UI:"
+hideLabel.Font = Enum.Font.Gotham
+hideLabel.TextScaled = true
+hideLabel.TextColor3 = Color3.fromRGB(230,230,230)
+hideLabel.TextXAlignment = Enum.TextXAlignment.Left
+hideLabel.Parent = setScroll
+
+local hideHotkeyBtn = Instance.new("TextButton")
+hideHotkeyBtn.Position = UDim2.new(0.5,0,0,0)
+hideHotkeyBtn.Size = UDim2.new(0.5,0,0,30)
+hideHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+hideHotkeyBtn.Font = Enum.Font.GothamSemibold
+hideHotkeyBtn.TextScaled = true
+hideHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+hideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
+hideHotkeyBtn.Parent = setScroll
+addHoverEffect(hideHotkeyBtn, hideHotkeyBtn.BackgroundColor3)
+
+local hideHotkeyCorner = Instance.new("UICorner")
+hideHotkeyCorner.CornerRadius = UDim.new(0,8)
+hideHotkeyCorner.Parent = hideHotkeyBtn
+
+State.HideHotkeyBtn = hideHotkeyBtn
+
+hideHotkeyBtn.MouseButton1Click:Connect(function()
+	State.WaitingForHideHotKey = true
+	hideHotkeyBtn.Text = "Hide: [Press Key]"
+end)
+
+-- Config name
+local cfgLabel = Instance.new("TextLabel")
+cfgLabel.Position = UDim2.new(0,0,0,40)
+cfgLabel.Size = UDim2.new(0.5,0,0,30)
+cfgLabel.BackgroundTransparency = 1
+cfgLabel.Text = "Config name:"
+cfgLabel.Font = Enum.Font.Gotham
+cfgLabel.TextScaled = true
+cfgLabel.TextColor3 = Color3.fromRGB(230,230,230)
+cfgLabel.TextXAlignment = Enum.TextXAlignment.Left
+cfgLabel.Parent = setScroll
+
+local cfgBox = Instance.new("TextBox")
+cfgBox.Position = UDim2.new(0.5,0,0,40)
+cfgBox.Size = UDim2.new(0.5,0,0,30)
+cfgBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
+cfgBox.Font = Enum.Font.Gotham
+cfgBox.TextScaled = true
+cfgBox.TextColor3 = Color3.fromRGB(255,255,255)
+cfgBox.PlaceholderText = "default"
+cfgBox.Text = ""
+cfgBox.Parent = setScroll
+
+local cfgBoxCorner = Instance.new("UICorner")
+cfgBoxCorner.CornerRadius = UDim.new(0,6)
+cfgBoxCorner.Parent = cfgBox
+
+State.ConfigNameBox = cfgBox
+
+-- Save Config
+local saveCfgBtn = Instance.new("TextButton")
+saveCfgBtn.Position = UDim2.new(0,0,0,80)
+saveCfgBtn.Size = UDim2.new(1,0,0,35)
+saveCfgBtn.BackgroundColor3 = Color3.fromRGB(0,90,180)
+saveCfgBtn.Font = Enum.Font.GothamSemibold
+saveCfgBtn.TextScaled = true
+saveCfgBtn.TextColor3 = Color3.fromRGB(255,255,255)
+saveCfgBtn.Text = "Save Config"
+saveCfgBtn.Parent = setScroll
+addHoverEffect(saveCfgBtn, saveCfgBtn.BackgroundColor3)
+
+local saveCfgCorner = Instance.new("UICorner")
+saveCfgCorner.CornerRadius = UDim.new(0,8)
+saveCfgCorner.Parent = saveCfgBtn
+
+saveCfgBtn.MouseButton1Click:Connect(saveConfig)
+
+-- Load Config
+local loadCfgBtn = Instance.new("TextButton")
+loadCfgBtn.Position = UDim2.new(0,0,0,120)
+loadCfgBtn.Size = UDim2.new(1,0,0,35)
+loadCfgBtn.BackgroundColor3 = Color3.fromRGB(0,90,180)
+loadCfgBtn.Font = Enum.Font.GothamSemibold
+loadCfgBtn.TextScaled = true
+loadCfgBtn.TextColor3 = Color3.fromRGB(255,255,255)
+loadCfgBtn.Text = "Load Config"
+loadCfgBtn.Parent = setScroll
+addHoverEffect(loadCfgBtn, loadCfgBtn.BackgroundColor3)
+
+local loadCfgCorner = Instance.new("UICorner")
+loadCfgCorner.CornerRadius = UDim.new(0,8)
+loadCfgCorner.Parent = loadCfgBtn
+
+loadCfgBtn.MouseButton1Click:Connect(loadConfig)
+
+---------------------------------------------------------
 -- دکمه‌های پنجره اصلی
 ---------------------------------------------------------
 local y = 0
@@ -1582,6 +2043,7 @@ local noclipPanelVisible = false
 local teleportPanelVisible = false
 local espPanelVisible = false
 local freeCamPanelVisible = false
+local settingsPanelVisible = false
 
 createMainButton("Fly", grayBtnColor, function()
 	flyPanelVisible = not flyPanelVisible
@@ -1613,17 +2075,33 @@ createMainButton("FreeCam", grayBtnColor, function()
 	stackSettingsWindows()
 end)
 
+createMainButton("Settings", blueBtnColor, function()
+	settingsPanelVisible = not settingsPanelVisible
+	settingsWindow.Visible = settingsPanelVisible
+	stackSettingsWindows()
+end)
+
 local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
 ---------------------------------------------------------
--- Global Input (hotkeys + FreeCam move + Inspect key)
+-- Global Input (hotkeys + FreeCam move + Hide key)
 ---------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 	local key = input.KeyCode
 
-	-- اگر در حال ست کردن هاتکی هستیم، فقط همون رو بگیر
+	-- اگر در حال ست کردن هاتکی هستیم
+	if State.WaitingForHideHotKey then
+		State.WaitingForHideHotKey = false
+		State.Hide_HotKey = key
+		State.Hide_HotKeyName = key.Name or "Key"
+		if State.HideHotkeyBtn then
+			State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
+		end
+		return
+	end
+
 	if State.WaitingForFlyHotKey then
 		State.WaitingForFlyHotKey = false
 		State.Fly_HotKey = key
@@ -1654,9 +2132,8 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		return
 	end
 
-	-- Inspect key برای hide/reveal منو
-	-- اینجا F4 رو به عنوان "Inspect" در نظر گرفتیم؛ اگر خواستی عوضش کن
-	if key == Enum.KeyCode.F4 then
+	-- Hide UI با Hide_HotKey (دیفالت Insert)
+	if State.Hide_HotKey and key == State.Hide_HotKey then
 		if ScreenGui then
 			ScreenGui.Enabled = not ScreenGui.Enabled
 		end
@@ -1716,18 +2193,5 @@ UserInputService.InputEnded:Connect(function(input, gp)
 		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
 	elseif key == Enum.KeyCode.LeftControl then
 		State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
-	end
-end)
-
----------------------------------------------------------
--- پایان لود و نمایش پنل اصلی
----------------------------------------------------------
-finishLoading("Loaded!", Color3.fromRGB(0,255,0))
-task.delay(2, function()
-	if loadingGui then
-		loadingGui:Destroy()
-	end
-	if mainWindow then
-		mainWindow.Visible = true
 	end
 end)
