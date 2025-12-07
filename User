@@ -4,11 +4,11 @@
 --//////////////  OBFUSCATED SETTINGS  /////////////////
 --//////////////////////////////////////////////////////
 
-local PIN_TAG = "szynixloader.b1uu2x3ld4"
+local PIN_TAG = "szynixloader.b1uu1x1ld1"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
-local NAME_TAG = "szynixesm.User"
+local NAME_TAG = "szynixesm.None"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
 local RANK_TAG = "szynixnghsh.Member"
