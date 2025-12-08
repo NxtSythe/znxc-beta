@@ -15,7 +15,7 @@ local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
 -- esp, freecam, fly, teleport, setting
-local OFF_TAG = "szynixoff.fly,teleport,setting"
+local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
 for part in string.gmatch(offRaw, "[^,]+") do
@@ -201,11 +201,6 @@ local function createLoadingGui()
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Parent = frame
 
     local title = Instance.new("TextLabel")
     title.BackgroundTransparency = 1
