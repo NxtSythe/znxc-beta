@@ -1,4 +1,4 @@
--- Zynix RBXC [BETA] - Single Script (NoClip removed / FreeCam mouse hint / Updates panel)
+-- Zynix RBXC [BETA] - Single Script (NoClip removed / FreeCam mouse hint / Updates panel + Zoom animations)
 
 --//////////////////////////////////////////////////////
 --//////////////  OBFUSCATED SETTINGS  /////////////////
@@ -85,14 +85,16 @@ local State = {
     Cam_OrigSubject = nil,
     Cam_OrigCFrame = nil,
 
-    -- Freeze player while FreeCam
-    OriginalWalkSpeed = nil,
-    OriginalJumpPower = nil,
+    -- freeze player while FreeCam
+    FreeCam_OrigWalkSpeed = nil,
+    FreeCam_OrigJumpPower = nil,
+    FreeCam_OrigAnchored = nil,
 
     -- Hide UI
     Hide_HotKey = Enum.KeyCode.Insert,
     Hide_HotKeyName = "Insert",
     WaitingForHideHotKey = false,
+    UIHidden = false,
 
     Teleport_Waypoints = {},
 
@@ -130,8 +132,10 @@ local State = {
     JoinNotifs = {},
 }
 
--- برای بعداً (پنل آپدیت‌ها)
+-- برای بعداً (پنل آپدیت‌ها و زوم کردن منوی اصلی)
 local showUpdatesPanel
+local showMainUI
+local hideMainUI
 
 ---------------------------------------------------------
 -- Helper functions
@@ -307,7 +311,11 @@ local function createLoadingGui()
                 loadingGui:Destroy()
             end
             if State.MainWindow then
-                State.MainWindow.Visible = true
+                if showMainUI then
+                    showMainUI()
+                else
+                    State.MainWindow.Visible = true
+                end
             end
 
             -- بعد از لود منو، پنل آپدیت‌ها
@@ -487,7 +495,7 @@ local function showCenterNotification(text, color)
 end
 
 ---------------------------------------------------------
--- نوتیف FreeCam: Press M to unlock your mouse (Zoom In / Zoom Out)
+-- نوتیف FreeCam: Press M to unlock your mouse (Zoom in/out)
 ---------------------------------------------------------
 local function showFreeCamMouseHint()
     local notifGui = Instance.new("ScreenGui")
@@ -496,7 +504,7 @@ local function showFreeCamMouseHint()
     notifGui.Parent = playerGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچک برای Zoom In
+    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچیک
     frame.AnchorPoint = Vector2.new(0.5, 0.5)
     frame.Position = UDim2.new(0.5, 0, 0.5, 0)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -525,7 +533,6 @@ local function showFreeCamMouseHint()
     label.Text = '<font color="rgb(255,255,255)">Press </font><font color="rgb(255,255,0)">M</font><font color="rgb(255,255,255)"> to unlock your mouse</font>'
     label.Parent = frame
 
-    -- Zoom In
     local zoomIn = TweenService:Create(
         frame,
         TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -534,11 +541,11 @@ local function showFreeCamMouseHint()
     zoomIn:Play()
 
     task.spawn(function()
+        zoomIn.Completed:Wait()
         task.wait(2)
-        -- Zoom Out
         local zoomOut = TweenService:Create(
             frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
             { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
         )
         zoomOut:Play()
@@ -1010,7 +1017,7 @@ localPlayer.CharacterAdded:Connect(function()
 end)
 
 ---------------------------------------------------------
--- FreeCam logic
+-- FreeCam logic (با فریز شدن پلیر)
 ---------------------------------------------------------
 local function setFreeCamEnabled(state)
     if not FeatureEnabled.freecam then return end
@@ -1022,6 +1029,21 @@ local function setFreeCamEnabled(state)
         State.Cam_OrigType = camera.CameraType
         State.Cam_OrigSubject = camera.CameraSubject
         State.Cam_OrigCFrame = camera.CFrame
+
+        -- freeze player
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and getRoot(char)
+        if hum then
+            State.FreeCam_OrigWalkSpeed = hum.WalkSpeed
+            State.FreeCam_OrigJumpPower = hum.JumpPower
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+        end
+        if root then
+            State.FreeCam_OrigAnchored = root.Anchored
+            root.Anchored = true
+        end
 
         local cf = camera.CFrame
         State.FreeCam_Pos = cf.Position
@@ -1035,22 +1057,28 @@ local function setFreeCamEnabled(state)
         UserInputService.MouseIconEnabled = false
         State.FreeCam_MouseLocked = true
 
-        -- Freeze player while FreeCam is active
-        local char = localPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            State.OriginalWalkSpeed = hum.WalkSpeed
-            State.OriginalJumpPower = hum.JumpPower
-            hum.WalkSpeed = 0
-            hum.JumpPower = 0
-        end
-
         -- نوتیف FreeCam موس
         showFreeCamMouseHint()
     else
         State.FreeCam_Enabled = false
         State.FreeCam_MoveDir = Vector3.zero
         State.FreeCam_MouseLocked = false
+
+        -- unfreeze player
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and getRoot(char)
+        if hum then
+            if State.FreeCam_OrigWalkSpeed then
+                hum.WalkSpeed = State.FreeCam_OrigWalkSpeed
+            end
+            if State.FreeCam_OrigJumpPower then
+                hum.JumpPower = State.FreeCam_OrigJumpPower
+            end
+        end
+        if root ~= nil and State.FreeCam_OrigAnchored ~= nil then
+            root.Anchored = State.FreeCam_OrigAnchored
+        end
 
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         UserInputService.MouseIconEnabled = true
@@ -1061,20 +1089,6 @@ local function setFreeCamEnabled(state)
         if State.Cam_OrigCFrame then
             camera.CFrame = State.Cam_OrigCFrame
         end
-
-        -- Unfreeze player when FreeCam is disabled
-        local char = localPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if State.OriginalWalkSpeed then
-                hum.WalkSpeed = State.OriginalWalkSpeed
-            end
-            if State.OriginalJumpPower then
-                hum.JumpPower = State.OriginalJumpPower
-            end
-        end
-        State.OriginalWalkSpeed = nil
-        State.OriginalJumpPower = nil
     end
 
     if State.FreeCamStateBtn then
@@ -1292,6 +1306,9 @@ local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
 local blueBtnColor = Color3.fromRGB(0,110,220)
 
+local MAIN_DEFAULT_SIZE = UDim2.new(0, 220, 0, 310)
+local MAIN_DEFAULT_POS = UDim2.new(0, 20, 1, -330)
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
 ScreenGui.ResetOnSpawn = false
@@ -1300,8 +1317,8 @@ ScreenGui.Parent = playerGui
 
 -- پنجره اصلی
 local mainWindow = Instance.new("Frame")
-mainWindow.Size = UDim2.new(0, 220, 0, 310)
-mainWindow.Position = UDim2.new(0, 20, 1, -330)
+mainWindow.Size = MAIN_DEFAULT_SIZE
+mainWindow.Position = MAIN_DEFAULT_POS
 mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 mainWindow.BackgroundTransparency = 0.3
 mainWindow.Active = true
@@ -1326,7 +1343,7 @@ title.Size = UDim2.new(1,-20,0,30)
 title.BackgroundColor3 = Color3.fromRGB(80,50,10)
 title.BackgroundTransparency = 0
 title.Text = "Zynix RBXC [BETA]"
-title.TextColor3 = Color3.fromRGB(255,255,255)
+title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -1335,13 +1352,9 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
 
-local titleStroke = Instance.new("UIStroke")
-titleStroke.Thickness = 1.3
-titleStroke.Color = Color3.fromRGB(255,140,0)
-titleStroke.Parent = title
-
-title.TextStrokeColor3 = Color3.fromRGB(255,255,255)
-title.TextStrokeTransparency = 0.6
+-- حذف استروک قبلی و استفاده از گلو ظریف روی تکست
+title.TextStrokeColor3 = Color3.fromRGB(255,200,80)
+title.TextStrokeTransparency = 0.25
 
 -- User + Rank (بدون کلمه‌ی User)
 local nameToShow = CONFIG_NAME or localPlayer.Name
@@ -1428,38 +1441,133 @@ State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
 State.Settings_Window = settingsWindow
 
-local function stackSettingsWindows()
-    local basePos = mainWindow.Position
-    local baseSize = mainWindow.Size
+-- سیستم جدید استک کردن پنل‌ها با انیمیشن
+local SettingsWindows = {}
+local WindowInfoByFrame = {}
 
-    local xScale = basePos.X.Scale
-    local xOff = basePos.X.Offset + baseSize.X.Offset + 10
-    local yScale = basePos.Y.Scale
-    local yOff = basePos.Y.Offset
-
-    local function place(win)
-        if not win.Visible then return end
-        win.Position = UDim2.new(xScale, xOff, yScale, yOff)
-        yOff = yOff + win.Size.Y.Offset + 10
-    end
-
-    place(flyWindow)
-    place(teleportWindow)
-    place(espWindow)
-    place(freeCamWindow)
-    place(settingsWindow)
+local function registerSettingsWindow(frame)
+    if not frame then return end
+    local info = {frame = frame, open = false, size = frame.Size}
+    table.insert(SettingsWindows, info)
+    WindowInfoByFrame[frame] = info
 end
 
-mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
+registerSettingsWindow(flyWindow)
+registerSettingsWindow(teleportWindow)
+registerSettingsWindow(espWindow)
+registerSettingsWindow(freeCamWindow)
+registerSettingsWindow(settingsWindow)
 
--- انیمیشن پنل‌ها حذف: فقط Visible on/off + چیدمان
-local function animateWindow(window, makeVisible)
-    if makeVisible then
-        window.Visible = true
-    else
-        window.Visible = false
+local function layoutSettingsWindows(animated)
+    local basePos = mainWindow.Position
+    local baseSize = mainWindow.Size
+    local xScale = basePos.X.Scale
+    local yScale = basePos.Y.Scale
+    local xOff = basePos.X.Offset + baseSize.X.Offset + 10
+    local yOff = basePos.Y.Offset
+
+    for _, info in ipairs(SettingsWindows) do
+        if info.open then
+            local frame = info.frame
+            local targetPos = UDim2.new(xScale, xOff, yScale, yOff)
+            yOff = yOff + info.size.Y.Offset + 10
+
+            if not frame.Visible then
+                frame.Position = targetPos
+            end
+
+            if animated then
+                TweenService:Create(
+                    frame,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                    { Position = targetPos }
+                ):Play()
+            else
+                frame.Position = targetPos
+            end
+        end
     end
-    stackSettingsWindows()
+end
+
+local function toggleSettingsWindow(frame)
+    local info = WindowInfoByFrame[frame]
+    if not info then return end
+
+    if not info.open then
+        info.open = true
+        frame.Visible = true
+        frame.Size = UDim2.new(info.size.X.Scale, info.size.X.Offset, 0, 0)
+
+        layoutSettingsWindows(false)
+
+        TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Size = info.size }
+        ):Play()
+
+        layoutSettingsWindows(true)
+    else
+        info.open = false
+
+        local tween = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(info.size.X.Scale, info.size.X.Offset, 0, 0) }
+        )
+        tween:Play()
+        tween.Completed:Connect(function()
+            if info.open then
+                frame.Size = info.size
+                return
+            end
+            frame.Visible = false
+            frame.Size = info.size
+        end)
+
+        layoutSettingsWindows(true)
+    end
+end
+
+-- وقتی منوی اصلی جابه‌جا می‌شود، پنل‌ها بدون انیمیشن همراهش حرکت کنند
+mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
+    layoutSettingsWindows(false)
+end)
+
+---------------------------------------------------------
+-- Zoom in / Zoom out برای منوی اصلی
+---------------------------------------------------------
+function showMainUI()
+    if not ScreenGui or not mainWindow then return end
+    ScreenGui.Enabled = true
+    mainWindow.Visible = true
+    mainWindow.Size = UDim2.new(0, 10, 0, 10)
+    mainWindow.Position = MAIN_DEFAULT_POS
+
+    local tweenIn = TweenService:Create(
+        mainWindow,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = MAIN_DEFAULT_SIZE }
+    )
+    tweenIn:Play()
+    State.UIHidden = false
+end
+
+function hideMainUI()
+    if not ScreenGui or not mainWindow then return end
+    local tweenOut = TweenService:Create(
+        mainWindow,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+        { Size = UDim2.new(0, 10, 0, 10) }
+    )
+    tweenOut:Play()
+    tweenOut.Completed:Connect(function()
+        if not ScreenGui then return end
+        ScreenGui.Enabled = false
+        mainWindow.Visible = false
+        mainWindow.Size = MAIN_DEFAULT_SIZE
+    end)
+    State.UIHidden = true
 end
 
 ---------------------------------------------------------
@@ -2195,7 +2303,7 @@ if FeatureEnabled.setting then
 end
 
 ---------------------------------------------------------
--- دکمه‌های پنجره اصلی
+-- دکمه‌های پنجره اصلی (با انیمیشن Zoom پنل‌ها)
 ---------------------------------------------------------
 local y = 0
 local function createMainButton(text, color, callback)
@@ -2223,44 +2331,43 @@ local function createMainButton(text, color, callback)
     return btn
 end
 
-local flyPanelVisible      = false
-local teleportPanelVisible = false
-local espPanelVisible      = false
-local freeCamPanelVisible  = false
-local settingsPanelVisible = false
-
 if FeatureEnabled.fly then
     createMainButton("Fly", grayBtnColor, function()
-        flyPanelVisible = not flyPanelVisible
-        animateWindow(flyWindow, flyPanelVisible)
+        if State.Fly_Window then
+            toggleSettingsWindow(State.Fly_Window)
+        end
     end)
 end
 
 if FeatureEnabled.teleport then
     createMainButton("Teleportation", grayBtnColor, function()
-        teleportPanelVisible = not teleportPanelVisible
-        animateWindow(teleportWindow, teleportPanelVisible)
+        if State.Teleport_Window then
+            toggleSettingsWindow(State.Teleport_Window)
+        end
     end)
 end
 
 if FeatureEnabled.esp then
     createMainButton("ESP", grayBtnColor, function()
-        espPanelVisible = not espPanelVisible
-        animateWindow(espWindow, espPanelVisible)
+        if State.ESP_Window then
+            toggleSettingsWindow(State.ESP_Window)
+        end
     end)
 end
 
 if FeatureEnabled.freecam then
     createMainButton("FreeCam", grayBtnColor, function()
-        freeCamPanelVisible = not freeCamPanelVisible
-        animateWindow(freeCamWindow, freeCamPanelVisible)
+        if State.FreeCam_Window then
+            toggleSettingsWindow(State.FreeCam_Window)
+        end
     end)
 end
 
 if FeatureEnabled.setting then
     createMainButton("Settings", blueBtnColor, function()
-        settingsPanelVisible = not settingsPanelVisible
-        animateWindow(settingsWindow, settingsPanelVisible)
+        if State.Settings_Window then
+            toggleSettingsWindow(State.Settings_Window)
+        end
     end)
 end
 
@@ -2268,7 +2375,7 @@ local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
 ---------------------------------------------------------
--- پنل آپدیت‌ها (Zoom In / Zoom Out)
+-- پنل آپدیت‌ها (Zoom In / Zoom Out + متن جدید)
 ---------------------------------------------------------
 showUpdatesPanel = function()
     if not ScreenGui then return end
@@ -2292,15 +2399,15 @@ showUpdatesPanel = function()
     stroke.Color = Color3.fromRGB(255,255,255)
     stroke.Parent = frame
 
-    local title = Instance.new("TextLabel")
-    title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1,-20,0,40)
-    title.Position = UDim2.new(0,10,0,10)
-    title.Font = Enum.Font.GothamBold
-    title.TextScaled = true
-    title.TextColor3 = Color3.fromRGB(255,255,255)
-    title.Text = "Updates!"
-    title.Parent = frame
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Size = UDim2.new(1,-20,0,40)
+    titleLabel.Position = UDim2.new(0,10,0,10)
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextScaled = true
+    titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+    titleLabel.Text = "Updates!"
+    titleLabel.Parent = frame
 
     local updatesLabel = Instance.new("TextLabel")
     updatesLabel.BackgroundTransparency = 1
@@ -2315,18 +2422,12 @@ showUpdatesPanel = function()
     updatesLabel.TextWrapped = true
 
     updatesLabel.Text =
-        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
-        '<font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
-        '<font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
-        '<font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
-        '<font color="rgb(255,255,255)">Added zoom in / zoom out animation to the "Press M to unlock your mouse" notification</font>\n' ..
-        '<font color="rgb(255,0,0)"><b>- </b></font>' ..
-        '<font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
-        '<font color="rgb(255,0,0)"><b>- </b></font>' ..
-        '<font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Added zoom in / zoom out animation to the "Press M to unlock your mouse" notification</font>\n' ..
+        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
+        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
 
     updatesLabel.Parent = frame
 
@@ -2334,7 +2435,7 @@ showUpdatesPanel = function()
     local zoomIn = TweenService:Create(
         frame,
         TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 340, 0, 180), BackgroundTransparency = 0.3 }
+        { Size = UDim2.new(0, 340, 0, 220), BackgroundTransparency = 0.3 }
     )
     zoomIn:Play()
 
@@ -2388,10 +2489,14 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Hide UI
+    -- Hide UI با Zoom in/Zoom out
     if State.Hide_HotKey and key == State.Hide_HotKey then
         if ScreenGui then
-            ScreenGui.Enabled = not ScreenGui.Enabled
+            if not ScreenGui.Enabled or State.UIHidden then
+                showMainUI()
+            else
+                hideMainUI()
+            end
         end
         return
     end
