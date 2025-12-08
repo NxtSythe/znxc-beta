@@ -4,9 +4,7 @@
 --//////////////  OBFUSCATED SETTINGS  /////////////////
 --//////////////////////////////////////////////////////
 
--- Example password: sythe3253
--- Encoded as: "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
-local PIN_TAG = "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
+local PIN_TAG = "szynixloader.s.mk.i.mk.n.mk.s.mk.i.mk.n.mk.3.mk.2.mk.5.mk.3"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 
 local CORRECT_PIN = ""
@@ -18,13 +16,13 @@ do
     end
 end
 
-local NAME_TAG = "szynixesm.Sythe"
+local NAME_TAG = "szynixesm.Guest"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
-local RANK_TAG = "szynixnghsh.Owner"
+local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.10000"
+local TIME_TAG = "szynixzmn.1"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
@@ -146,6 +144,7 @@ local State = {
     Console_HotKey = Enum.KeyCode.F6,
     Console_HotKeyName = "F6",
     WaitingForConsoleHotKey = false,
+    ConsoleHotkeyBtn = nil,
 }
 
 local showUpdatesPanel
@@ -543,7 +542,6 @@ local function showCenterNotification(text, color)
     label.Text = text
     label.Parent = frame
 
-    -- simple fade without zoom for generic notifications
     task.spawn(function()
         task.wait(2.5)
         local tweenOut = TweenService:Create(
@@ -1660,6 +1658,13 @@ function showMainUI()
     mainWindow.Size = UDim2.new(0, 10, 0, 10)
     mainWindow.Position = MAIN_DEFAULT_POS
 
+    -- restore settings windows that were open
+    for _, info in ipairs(SettingsWindows) do
+        if info.open and info.frame then
+            info.frame.Visible = true
+        end
+    end
+
     local tweenIn = TweenService:Create(
         mainWindow,
         TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -1679,14 +1684,19 @@ function hideMainUI()
     tweenOut:Play()
     tweenOut.Completed:Connect(function()
         if not ScreenGui then return end
-        ScreenGui.Enabled = false
         mainWindow.Visible = false
         mainWindow.Size = MAIN_DEFAULT_SIZE
+        -- hide settings windows but keep their open state
+        for _, info in ipairs(SettingsWindows) do
+            if info.frame then
+                info.frame.Visible = false
+            end
+        end
     end)
     State.UIHidden = true
 end
 
--- Console window (black, 70% opacity, green stroke, white text, draggable, F6 default)
+-- Console window (bigger, black 70%, white stroke, white text, zoom in/out, independent)
 local function createConsoleWindow()
     local consoleGuiFrame = Instance.new("Frame")
     consoleGuiFrame.Name = "ShiningConsole"
@@ -1706,7 +1716,7 @@ local function createConsoleWindow()
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(0,255,0)
+    stroke.Color = Color3.fromRGB(255,255,255) -- white stroke
     stroke.Parent = consoleGuiFrame
 
     local titleLabel = Instance.new("TextLabel")
@@ -1728,7 +1738,7 @@ local function createConsoleWindow()
     input.Font = Enum.Font.Gotham
     input.TextScaled = true
     input.TextColor3 = Color3.fromRGB(255,255,255)
-    input.PlaceholderText = "Type command and press Enter"
+    input.PlaceholderText = "Type command or script"
     input.Text = ""
     input.ClearTextOnFocus = false
     input.Parent = consoleGuiFrame
@@ -1737,19 +1747,99 @@ local function createConsoleWindow()
     icorner.CornerRadius = UDim.new(0,8)
     icorner.Parent = input
 
+    -- RUN button
+    local runButton = Instance.new("TextButton")
+    runButton.Size = UDim2.new(0, 120, 0, 32)
+    runButton.Position = UDim2.new(1, -130, 0, 90)
+    runButton.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    runButton.BackgroundTransparency = 0.3
+    runButton.Text = "RUN!"
+    runButton.Font = Enum.Font.GothamBold
+    runButton.TextScaled = true
+    runButton.TextColor3 = Color3.fromRGB(0,255,0)
+    runButton.Parent = consoleGuiFrame
+
+    local runCorner = Instance.new("UICorner")
+    runCorner.CornerRadius = UDim.new(0,8)
+    runCorner.Parent = runButton
+
+    local runStroke = Instance.new("UIStroke")
+    runStroke.Thickness = 1.5
+    runStroke.Color = Color3.fromRGB(0,255,0)
+    runStroke.Parent = runButton
+
     State.Console_Window = consoleGuiFrame
     State.ConsoleInputBox = input
+
+    local function runConsoleScript()
+        local src = State.ConsoleInputBox and State.ConsoleInputBox.Text
+        if not src or src == "" then
+            return
+        end
+        if not loadstring then
+            showCenterNotification("loadstring is not supported by this executor!", Color3.fromRGB(255,0,0))
+            return
+        end
+        local fn, err = loadstring(src)
+        if not fn then
+            showCenterNotification("Script error!", Color3.fromRGB(255,0,0))
+            return
+        end
+        local ok, runtimeErr = pcall(fn)
+        if not ok then
+            showCenterNotification("Runtime error!", Color3.fromRGB(255,0,0))
+        end
+    end
+
+    local function animateRunButton()
+        local baseSize = runButton.Size
+        local basePos = runButton.Position
+        local shrinkSize = UDim2.new(baseSize.X.Scale, baseSize.X.Offset - 6, baseSize.Y.Scale, baseSize.Y.Offset - 6)
+        local shrinkPos = UDim2.new(basePos.X.Scale, basePos.X.Offset + 3, basePos.Y.Scale, basePos.Y.Offset + 3)
+
+        local tOut = TweenService:Create(
+            runButton,
+            TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+            { Size = shrinkSize, Position = shrinkPos }
+        )
+
+        tOut.Completed:Connect(function()
+            TweenService:Create(
+                runButton,
+                TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                { Size = baseSize, Position = basePos }
+            ):Play()
+        end)
+
+        tOut:Play()
+    end
+
+    runButton.MouseButton1Click:Connect(function()
+        animateRunButton()
+        runConsoleScript()
+    end)
 end
 
 createConsoleWindow()
 
+-- New console time syntax:
+-- szynixtime.set.[Time].[s,m,h].code35
+-- s: seconds, m: minutes, h: hours
 local function processConsoleCommand(cmd)
     cmd = tostring(cmd or ""):lower()
-    local timeStr = cmd:match("szynixtime%.set%.(%d+)%.code35")
-    if timeStr then
-        local addSec = tonumber(timeStr)
-        if addSec and addSec > 0 then
-            -- Add time (seconds) to timer
+
+    local amountStr, unit = cmd:match("szynixtime%.set%.(%d+)%.([smh])%.code35")
+    if amountStr and unit then
+        local num = tonumber(amountStr)
+        if num and num > 0 then
+            local mult = 1
+            if unit == "m" then
+                mult = 60
+            elseif unit == "h" then
+                mult = 3600
+            end
+            local addSec = num * mult
+
             State.ZC_RemainingSeconds = (State.ZC_RemainingSeconds or 0) + addSec
             State.ZC_TotalSeconds = (State.ZC_TotalSeconds or 0) + addSec
             State.ZC_Enabled = true
@@ -1757,6 +1847,7 @@ local function processConsoleCommand(cmd)
             refreshSCTimerLabel()
             showTimeAddedNotification(addSec)
         end
+        return
     end
 end
 
@@ -1783,7 +1874,7 @@ local function toggleConsole()
         local zoomIn = TweenService:Create(
             frame,
             TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-            { Size = UDim2.new(0, 420, 0, 130), BackgroundTransparency = 0.3 }
+            { Size = UDim2.new(0, 500, 0, 160), BackgroundTransparency = 0.3 }
         )
         zoomIn:Play()
     else
@@ -2562,16 +2653,11 @@ local function createMainButton(text, color, callback, isSettings)
     btn.Text = text
     btn.Parent = mainScroll
 
-    -- Settings button: black bg, white text, white stroke
     if isSettings then
-        color = Color3.fromRGB(0,0,0)
+        -- Settings button: dark blue bg, white text, no stroke
+        color = Color3.fromRGB(0,0,90)
         btn.BackgroundColor3 = color
         btn.AutoButtonColor = false
-
-        local stroke = Instance.new("UIStroke")
-        stroke.Thickness = 1.5
-        stroke.Color = Color3.fromRGB(255,255,255)
-        stroke.Parent = btn
     else
         addHoverEffect(btn, color)
         btn.BackgroundColor3 = color
@@ -2712,7 +2798,7 @@ local function showTimeOverNotification()
     end)
 end
 
--- 10-second warning notification: black bg (70% opacity), white stroke, white text, zoom anim, 3s
+-- 10-second warning notification: black bg (70%), white stroke, white text, zoom anim, 3s
 local function showTimeAlmostOverNotification()
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixTimeAlmostOver"
@@ -2811,7 +2897,7 @@ function showZCTimeInfoNotification()
 
     local zoomIn = TweenService:Create(
         frame,
-        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
         { Size = UDim2.new(0, 420, 0, 90), BackgroundTransparency = 0.3 }
     )
     zoomIn:Play()
@@ -2821,7 +2907,7 @@ function showZCTimeInfoNotification()
         task.wait(4)
         local zoomOut = TweenService:Create(
             frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In),
             { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
         )
         zoomOut:Play()
@@ -2999,19 +3085,17 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Console toggle
+    -- Console toggle (independent from main panel)
     if State.Console_HotKey and key == State.Console_HotKey then
         toggleConsole()
         return
     end
 
     if State.Hide_HotKey and key == State.Hide_HotKey then
-        if ScreenGui then
-            if not ScreenGui.Enabled or State.UIHidden then
-                showMainUI()
-            else
-                hideMainUI()
-            end
+        if not State.UIHidden then
+            hideMainUI()
+        else
+            showMainUI()
         end
         return
     end
