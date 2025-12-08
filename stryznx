@@ -4,7 +4,9 @@
 --//////////////  OBFUSCATED SETTINGS  /////////////////
 --//////////////////////////////////////////////////////
 
-local PIN_TAG = "szynixloader.s.mk.i.mk.n.mk.s.mk.i.mk.n.mk.3.mk.2.mk.5.mk.3"
+-- Example password: sythe3253
+-- Encoded as: "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
+local PIN_TAG = "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 
 local CORRECT_PIN = ""
@@ -16,13 +18,13 @@ do
     end
 end
 
-local NAME_TAG = "szynixesm.Guest"
+local NAME_TAG = "szynixesm.Sythe"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
-local RANK_TAG = "szynixnghsh.Member"
+local RANK_TAG = "szynixnghsh.Owner"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.1"
+local TIME_TAG = "szynixzmn.10000"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
@@ -109,6 +111,7 @@ local State = {
     FreeCam_Window = nil,
     Teleport_Window = nil,
     Settings_Window = nil,
+    Admin_Window = nil,
 
     FlyStateBtn = nil,
     FlySpeedBox = nil,
@@ -137,14 +140,12 @@ local State = {
     ZC_TimerLabel = nil,
     ZC_TimerRunning = false,
 
-    -- Console
-    Console_Window = nil,
-    ConsoleInputBox = nil,
-    Console_Enabled = false,
-    Console_HotKey = Enum.KeyCode.F6,
-    Console_HotKeyName = "F6",
-    WaitingForConsoleHotKey = false,
-    ConsoleHotkeyBtn = nil,
+    -- Admin color panel
+    PanelColorIndex = 1,
+    PanelColorBtn = nil,
+
+    -- Main window size (for resize)
+    MainWindowSize = nil,
 }
 
 local showUpdatesPanel
@@ -1266,7 +1267,6 @@ local function buildConfig()
         Fly_HotKey = State.Fly_HotKeyName,
         FreeCam_HotKey = State.FreeCam_HotKeyName,
         Hide_HotKey = State.Hide_HotKeyName,
-        Console_HotKey = State.Console_HotKeyName,
 
         ESP_ColorIndex = colorIndex or 1,
         ESP_Rainbow = State.ESP_Rainbow,
@@ -1314,15 +1314,6 @@ local function applyConfig(cfg)
         State.Hide_HotKeyName = cfg.Hide_HotKey
         if State.HideHotkeyBtn then
             State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
-        end
-    end
-
-    if cfg.Console_HotKey then
-        local kc = keycodeFromName(cfg.Console_HotKey)
-        State.Console_HotKey = kc
-        State.Console_HotKeyName = cfg.Console_HotKey
-        if State.ConsoleHotkeyBtn then
-            State.ConsoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
         end
     end
 
@@ -1422,6 +1413,7 @@ local blueBtnColor = Color3.fromRGB(0,110,220)
 
 local MAIN_DEFAULT_SIZE = UDim2.new(0, 220, 0, 310)
 local MAIN_DEFAULT_POS = UDim2.new(0, 20, 1, -330)
+local MIN_MAIN_WIDTH, MIN_MAIN_HEIGHT = 220, 220
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
@@ -1445,14 +1437,16 @@ mainCorner.CornerRadius = UDim.new(0,10)
 mainCorner.Parent = mainWindow
 
 local mainStroke = Instance.new("UIStroke")
+local DEFAULT_STROKE_COLOR = Color3.fromRGB(255,255,255)
 mainStroke.Thickness = 1.5
-mainStroke.Color = Color3.fromRGB(255,255,255) -- white stroke instead of orange
+mainStroke.Color = DEFAULT_STROKE_COLOR -- white stroke
 mainStroke.Parent = mainWindow
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(0,255,255) -- Aqua background
+local DEFAULT_TITLE_COLOR = Color3.fromRGB(0,255,255)
+title.BackgroundColor3 = DEFAULT_TITLE_COLOR -- Aqua background
 title.BackgroundTransparency = 0
 title.Text = "ShiningRBXC"
 title.TextColor3 = Color3.fromRGB(0,0,0)
@@ -1465,6 +1459,8 @@ titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
 
 title.TextStrokeTransparency = 1
+
+State.MainWindowSize = MAIN_DEFAULT_SIZE
 
 local nameToShow = CONFIG_NAME or localPlayer.Name
 local rankToShow = CONFIG_RANK or "Member"
@@ -1553,12 +1549,14 @@ local espWindow      = createSettingsWindow("ESPWindow", 230, 240)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow  = createSettingsWindow("FreeCamWindow", 230, 200)
 local settingsWindow = createSettingsWindow("SettingsWindow", 230, 230)
+local adminWindow    = createSettingsWindow("AdminWindow", 230, 160)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
 State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
 State.Settings_Window = settingsWindow
+State.Admin_Window = adminWindow
 
 local SettingsWindows = {}
 local WindowInfoByFrame = {}
@@ -1575,6 +1573,7 @@ registerSettingsWindow(teleportWindow)
 registerSettingsWindow(espWindow)
 registerSettingsWindow(freeCamWindow)
 registerSettingsWindow(settingsWindow)
+registerSettingsWindow(adminWindow)
 
 local function layoutSettingsWindows(animated)
     local basePos = mainWindow.Position
@@ -1651,6 +1650,87 @@ mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
     layoutSettingsWindows(false)
 end)
 
+mainWindow:GetPropertyChangedSignal("Size"):Connect(function()
+    layoutSettingsWindows(false)
+end)
+
+--/////////// ADMIN PANEL COLOR CONTROL ///////////
+local panelColors = {
+    { name = "Default", color = nil },
+    { name = "Red",     color = Color3.fromRGB(255,0,0) },
+    { name = "Orange",  color = Color3.fromRGB(255,165,0) },
+    { name = "Yellow",  color = Color3.fromRGB(255,255,0) },
+    { name = "Blue",    color = Color3.fromRGB(0,120,255) },
+    { name = "Green",   color = Color3.fromRGB(0,255,0) },
+    { name = "Purple",  color = Color3.fromRGB(180,0,255) },
+}
+
+local function applyPanelColor()
+    local idx = State.PanelColorIndex or 1
+    if idx < 1 or idx > #panelColors then idx = 1 end
+    local opt = panelColors[idx]
+
+    if not opt.color then
+        mainStroke.Color = DEFAULT_STROKE_COLOR
+        title.BackgroundColor3 = DEFAULT_TITLE_COLOR
+    else
+        mainStroke.Color = opt.color
+        title.BackgroundColor3 = opt.color
+    end
+
+    if State.PanelColorBtn then
+        State.PanelColorBtn.Text = "Color: " .. string.upper(opt.name)
+    end
+end
+
+--//////////// MAIN WINDOW RESIZE (BOTTOM-RIGHT CORNER) ////////////
+local resizeHandle = Instance.new("Frame")
+resizeHandle.Size = UDim2.new(0, 16, 0, 16)
+resizeHandle.AnchorPoint = Vector2.new(1, 1)
+resizeHandle.Position = UDim2.new(1, 0, 1, 0)
+resizeHandle.BackgroundColor3 = Color3.fromRGB(60,60,70)
+resizeHandle.BackgroundTransparency = 0
+resizeHandle.BorderSizePixel = 0
+resizeHandle.Parent = mainWindow
+
+local resizeCorner = Instance.new("UICorner")
+resizeCorner.CornerRadius = UDim.new(0,4)
+resizeCorner.Parent = resizeHandle
+
+local resizing = false
+local resizeStartPos
+local resizeStartSize
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = true
+        resizeStartPos = UserInputService:GetMouseLocation()
+        resizeStartSize = mainWindow.Size
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                resizing = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not resizing then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+    local current = UserInputService:GetMouseLocation()
+    local dx = current.X - resizeStartPos.X
+    local dy = current.Y - resizeStartPos.Y
+
+    local newWidth  = math.max(MIN_MAIN_WIDTH,  resizeStartSize.X.Offset + dx)
+    local newHeight = math.max(MIN_MAIN_HEIGHT, resizeStartSize.Y.Offset + dy)
+
+    local newSize = UDim2.new(0, newWidth, 0, newHeight)
+    mainWindow.Size = newSize
+    State.MainWindowSize = newSize
+    layoutSettingsWindows(false)
+end)
+
 function showMainUI()
     if not ScreenGui or not mainWindow then return end
     ScreenGui.Enabled = true
@@ -1658,17 +1738,12 @@ function showMainUI()
     mainWindow.Size = UDim2.new(0, 10, 0, 10)
     mainWindow.Position = MAIN_DEFAULT_POS
 
-    -- restore settings windows that were open
-    for _, info in ipairs(SettingsWindows) do
-        if info.open and info.frame then
-            info.frame.Visible = true
-        end
-    end
+    local targetSize = State.MainWindowSize or MAIN_DEFAULT_SIZE
 
     local tweenIn = TweenService:Create(
         mainWindow,
         TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = MAIN_DEFAULT_SIZE }
+        { Size = targetSize }
     )
     tweenIn:Play()
     State.UIHidden = false
@@ -1685,212 +1760,74 @@ function hideMainUI()
     tweenOut.Completed:Connect(function()
         if not ScreenGui then return end
         mainWindow.Visible = false
-        mainWindow.Size = MAIN_DEFAULT_SIZE
-        -- hide settings windows but keep their open state
+        -- Close all settings windows and reset open flags
         for _, info in ipairs(SettingsWindows) do
             if info.frame then
                 info.frame.Visible = false
+                info.open = false
             end
         end
     end)
     State.UIHidden = true
 end
 
--- Console window (bigger, black 70%, white stroke, white text, zoom in/out, independent)
-local function createConsoleWindow()
-    local consoleGuiFrame = Instance.new("Frame")
-    consoleGuiFrame.Name = "ShiningConsole"
-    consoleGuiFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    consoleGuiFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    consoleGuiFrame.Size = UDim2.new(0, 10, 0, 10)
-    consoleGuiFrame.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    consoleGuiFrame.BackgroundTransparency = 1
-    consoleGuiFrame.Active = true
-    consoleGuiFrame.Draggable = true
-    consoleGuiFrame.Visible = false
-    consoleGuiFrame.Parent = ScreenGui
+--//////////// ADMIN PANEL UI ////////////
+do
+    local adminTitle = Instance.new("TextLabel")
+    adminTitle.Position = UDim2.new(0,10,0,10)
+    adminTitle.Size = UDim2.new(1,-20,0,25)
+    adminTitle.BackgroundTransparency = 1
+    adminTitle.Text = "Admin Panel"
+    adminTitle.TextColor3 = Color3.fromRGB(200,200,255)
+    adminTitle.TextScaled = true
+    adminTitle.Font = Enum.Font.GothamBold
+    adminTitle.Parent = adminWindow
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0,10)
-    corner.Parent = consoleGuiFrame
+    local adminScroll = Instance.new("ScrollingFrame")
+    adminScroll.Position = UDim2.new(0,10,0,45)
+    adminScroll.Size = UDim2.new(1,-20,1,-55)
+    adminScroll.BackgroundTransparency = 1
+    adminScroll.BorderSizePixel = 0
+    adminScroll.ScrollBarThickness = 4
+    adminScroll.CanvasSize = UDim2.new(0,0,0,120)
+    adminScroll.Parent = adminWindow
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255,255,255) -- white stroke
-    stroke.Parent = consoleGuiFrame
+    local adminScrollCorner = Instance.new("UICorner")
+    adminScrollCorner.CornerRadius = UDim.new(0,8)
+    adminScrollCorner.Parent = adminScroll
 
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Size = UDim2.new(1,-20,0,30)
-    titleLabel.Position = UDim2.new(0,10,0,10)
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextScaled = true
-    titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Text = "Console"
-    titleLabel.Parent = consoleGuiFrame
+    local colorBtn = Instance.new("TextButton")
+    colorBtn.Position = UDim2.new(0,0,0,0)
+    colorBtn.Size = UDim2.new(1,0,0,35)
+    colorBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    colorBtn.Font = Enum.Font.GothamSemibold
+    colorBtn.TextScaled = true
+    colorBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    colorBtn.Text = "Color: DEFAULT"
+    colorBtn.Parent = adminScroll
+    addHoverEffect(colorBtn, colorBtn.BackgroundColor3)
 
-    local input = Instance.new("TextBox")
-    input.BackgroundColor3 = Color3.fromRGB(20,20,20)
-    input.BackgroundTransparency = 0
-    input.Size = UDim2.new(1,-20,0,30)
-    input.Position = UDim2.new(0,10,0,50)
-    input.Font = Enum.Font.Gotham
-    input.TextScaled = true
-    input.TextColor3 = Color3.fromRGB(255,255,255)
-    input.PlaceholderText = "Type command or script"
-    input.Text = ""
-    input.ClearTextOnFocus = false
-    input.Parent = consoleGuiFrame
+    local colorCorner = Instance.new("UICorner")
+    colorCorner.CornerRadius = UDim.new(0,8)
+    colorCorner.Parent = colorBtn
 
-    local icorner = Instance.new("UICorner")
-    icorner.CornerRadius = UDim.new(0,8)
-    icorner.Parent = input
+    State.PanelColorBtn = colorBtn
+    State.PanelColorIndex = 1
+    applyPanelColor()
 
-    -- RUN button
-    local runButton = Instance.new("TextButton")
-    runButton.Size = UDim2.new(0, 120, 0, 32)
-    runButton.Position = UDim2.new(1, -130, 0, 90)
-    runButton.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    runButton.BackgroundTransparency = 0.3
-    runButton.Text = "RUN!"
-    runButton.Font = Enum.Font.GothamBold
-    runButton.TextScaled = true
-    runButton.TextColor3 = Color3.fromRGB(0,255,0)
-    runButton.Parent = consoleGuiFrame
-
-    local runCorner = Instance.new("UICorner")
-    runCorner.CornerRadius = UDim.new(0,8)
-    runCorner.Parent = runButton
-
-    local runStroke = Instance.new("UIStroke")
-    runStroke.Thickness = 1.5
-    runStroke.Color = Color3.fromRGB(0,255,0)
-    runStroke.Parent = runButton
-
-    State.Console_Window = consoleGuiFrame
-    State.ConsoleInputBox = input
-
-    local function runConsoleScript()
-        local src = State.ConsoleInputBox and State.ConsoleInputBox.Text
-        if not src or src == "" then
-            return
+    colorBtn.MouseButton1Click:Connect(function()
+        State.PanelColorIndex = State.PanelColorIndex + 1
+        if State.PanelColorIndex > #panelColors then
+            State.PanelColorIndex = 1
         end
-        if not loadstring then
-            showCenterNotification("loadstring is not supported by this executor!", Color3.fromRGB(255,0,0))
-            return
-        end
-        local fn, err = loadstring(src)
-        if not fn then
-            showCenterNotification("Script error!", Color3.fromRGB(255,0,0))
-            return
-        end
-        local ok, runtimeErr = pcall(fn)
-        if not ok then
-            showCenterNotification("Runtime error!", Color3.fromRGB(255,0,0))
-        end
-    end
-
-    local function animateRunButton()
-        local baseSize = runButton.Size
-        local basePos = runButton.Position
-        local shrinkSize = UDim2.new(baseSize.X.Scale, baseSize.X.Offset - 6, baseSize.Y.Scale, baseSize.Y.Offset - 6)
-        local shrinkPos = UDim2.new(basePos.X.Scale, basePos.X.Offset + 3, basePos.Y.Scale, basePos.Y.Offset + 3)
-
-        local tOut = TweenService:Create(
-            runButton,
-            TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
-            { Size = shrinkSize, Position = shrinkPos }
-        )
-
-        tOut.Completed:Connect(function()
-            TweenService:Create(
-                runButton,
-                TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                { Size = baseSize, Position = basePos }
-            ):Play()
-        end)
-
-        tOut:Play()
-    end
-
-    runButton.MouseButton1Click:Connect(function()
-        animateRunButton()
-        runConsoleScript()
+        applyPanelColor()
     end)
 end
 
-createConsoleWindow()
+--//////////// SETTINGS WINDOWS CREATED ABOVE ////////////
 
--- New console time syntax:
--- szynixtime.set.[Time].[s,m,h].code35
--- s: seconds, m: minutes, h: hours
-local function processConsoleCommand(cmd)
-    cmd = tostring(cmd or ""):lower()
-
-    local amountStr, unit = cmd:match("szynixtime%.set%.(%d+)%.([smh])%.code35")
-    if amountStr and unit then
-        local num = tonumber(amountStr)
-        if num and num > 0 then
-            local mult = 1
-            if unit == "m" then
-                mult = 60
-            elseif unit == "h" then
-                mult = 3600
-            end
-            local addSec = num * mult
-
-            State.ZC_RemainingSeconds = (State.ZC_RemainingSeconds or 0) + addSec
-            State.ZC_TotalSeconds = (State.ZC_TotalSeconds or 0) + addSec
-            State.ZC_Enabled = true
-            State.ZC_Expired = false
-            refreshSCTimerLabel()
-            showTimeAddedNotification(addSec)
-        end
-        return
-    end
-end
-
-if State.ConsoleInputBox then
-    State.ConsoleInputBox.FocusLost:Connect(function(enter)
-        if enter then
-            local text = State.ConsoleInputBox.Text
-            processConsoleCommand(text)
-            State.ConsoleInputBox.Text = ""
-        end
-    end)
-end
-
-local function toggleConsole()
-    if not State.Console_Window then return end
-    local frame = State.Console_Window
-
-    if not State.Console_Enabled then
-        State.Console_Enabled = true
-        frame.Visible = true
-        frame.Size = UDim2.new(0,10,0,10)
-        frame.BackgroundTransparency = 1
-
-        local zoomIn = TweenService:Create(
-            frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-            { Size = UDim2.new(0, 500, 0, 160), BackgroundTransparency = 0.3 }
-        )
-        zoomIn:Play()
-    else
-        State.Console_Enabled = false
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0,10,0,10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Connect(function()
-            frame.Visible = false
-        end)
-    end
-end
-
+-- (Fly, FreeCam, Teleport, ESP, Settings creation remains the same as before)
+-- FLY WINDOW
 if FeatureEnabled.fly then
     local flyTitle = Instance.new("TextLabel")
     flyTitle.Position = UDim2.new(0,10,0,10)
@@ -1996,6 +1933,7 @@ if FeatureEnabled.fly then
     end)
 end
 
+-- FREECAM WINDOW
 if FeatureEnabled.freecam then
     local freeTitle = Instance.new("TextLabel")
     freeTitle.Position = UDim2.new(0,10,0,10)
