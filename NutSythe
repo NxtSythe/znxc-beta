@@ -14,6 +14,11 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.Owner"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
+local TIME_TAG = "szynixzmn.1000"
+local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
+local TIME_MINUTES = tonumber(TIME_RAW:match("%d+")) or 0
+local SESSION_INITIAL_SECONDS = TIME_MINUTES * 60
+
 -- esp, freecam, fly, teleport, noclip, setting
 local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
@@ -30,7 +35,6 @@ local FeatureEnabled = {
     freecam  = not OffFeatures["freecam"],
     fly      = not OffFeatures["fly"],
     teleport = not OffFeatures["teleport"],
-    noclip   = not OffFeatures["noclip"],
     setting  = not OffFeatures["setting"],
 }
 
@@ -81,33 +85,33 @@ local State = {
     FreeCam_Pos = Vector3.new(0,0,0),
     FreeCam_Yaw = 0,
     FreeCam_Pitch = 0,
+    FreeCam_MouseLocked = false, -- برای سوییچ لاک/آنلاک موس
     Cam_OrigType = nil,
     Cam_OrigSubject = nil,
     Cam_OrigCFrame = nil,
 
-    Noclip_Enabled = false,
-    Noclip_HotKey = nil,
-    Noclip_HotKeyName = "None",
-    Noclip_Conn = nil,
+    -- freeze player while FreeCam
+    FreeCam_OrigWalkSpeed = nil,
+    FreeCam_OrigJumpPower = nil,
+    FreeCam_OrigAnchored = nil,
 
     -- Hide UI
     Hide_HotKey = Enum.KeyCode.Insert,
     Hide_HotKeyName = "Insert",
     WaitingForHideHotKey = false,
+    UIHidden = false,
 
     Teleport_Waypoints = {},
 
     -- Hotkey waiting flags
     WaitingForFlyHotKey = false,
     WaitingForFreeCamHotKey = false,
-    WaitingForNoclipHotKey = false,
 
     -- UI refs
     MainWindow = nil,
     ESP_Window = nil,
     Fly_Window = nil,
     FreeCam_Window = nil,
-    Noclip_Window = nil,
     Teleport_Window = nil,
     Settings_Window = nil,
 
@@ -119,9 +123,6 @@ local State = {
     FreeCamSpeedBox = nil,
     FreeCamHotkeyBtn = nil,
 
-    NoclipStateBtn = nil,
-    NoclipHotkeyBtn = nil,
-
     ESPStateBtn = nil,
     ESPColorBtn = nil,
     ComingSoonBtn = nil,
@@ -132,9 +133,21 @@ local State = {
 
     -- toggle notifications (bottom-right)
     ToggleNotifs = {},
-    -- join notifications (bottom-right, لایه‌ی جدا)
+    -- join notifications (bottom-right, جدا)
     JoinNotifs = {},
+
+    -- ZC timer
+    SessionTimeLeft = 0,
+    SessionTotalTime = 0,
+    SessionExpired = false,
+    ZC_Label = nil,
 }
+
+-- برای بعداً (پنل آپدیت‌ها و زوم کردن منوی اصلی)
+local showUpdatesPanel
+local showMainUI
+local hideMainUI
+local startSessionTimer
 
 ---------------------------------------------------------
 -- Helper functions
@@ -201,18 +214,13 @@ local function createLoadingGui()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Parent = frame
-
     local title = Instance.new("TextLabel")
     title.BackgroundTransparency = 1
     title.Size = UDim2.new(1, -20, 0, 35)
     title.Position = UDim2.new(0,10,0,8)
     title.Font = Enum.Font.GothamBold
     title.TextScaled = true
-    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
     title.TextXAlignment = Enum.TextXAlignment.Center
     title.Text = "Zynix RBXC [BETA]"
     title.Parent = frame
@@ -288,7 +296,7 @@ local function createLoadingGui()
 
     local function handleSuccess()
         status.TextColor3 = Color3.fromRGB(0,255,0)
-        status.Text = "Successful!"
+        status.Text = "Welcome Sythe!"
         pinBox.Visible = false
         pinLabel.Visible = false
         confirmBtn.Visible = false
@@ -310,7 +318,21 @@ local function createLoadingGui()
                 loadingGui:Destroy()
             end
             if State.MainWindow then
-                State.MainWindow.Visible = true
+                if showMainUI then
+                    showMainUI()
+                else
+                    State.MainWindow.Visible = true
+                end
+            end
+
+            -- بعد از لود منو، پنل آپدیت‌ها
+            if showUpdatesPanel then
+                showUpdatesPanel()
+            end
+
+            -- شروع تایمر ZC (اگر تنظیم شده باشد)
+            if SESSION_INITIAL_SECONDS > 0 and startSessionTimer then
+                startSessionTimer()
             end
         end)
     end
@@ -363,7 +385,7 @@ local function showJoinNotification(playerName)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 260, 0, height)
     frame.AnchorPoint = Vector2.new(1, 1)
-    frame.Position = UDim2.new(1, 280, 1, -20) -- از بیرون وارد می‌شود
+    frame.Position = UDim2.new(1, 280, 1, -20)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
@@ -389,7 +411,6 @@ local function showJoinNotification(playerName)
     label.Text = playerName .. " joined the game!"
     label.Parent = frame
 
-    -- نوتیف‌های جوین قبلی رو یک طبقه بالاتر ببریم
     local delta = height + spacing
     for _, info in ipairs(State.JoinNotifs) do
         if info.Frame and info.Frame.Parent then
@@ -435,7 +456,7 @@ local function showJoinNotification(playerName)
 end
 
 ---------------------------------------------------------
--- نوتیف وسط صفحه (مثلاً برای Load Config)
+-- نوتیف وسط صفحه (برای پیام‌های عمومی)
 ---------------------------------------------------------
 local function showCenterNotification(text, color)
     local notifGui = Instance.new("ScreenGui")
@@ -486,29 +507,20 @@ local function showCenterNotification(text, color)
 end
 
 ---------------------------------------------------------
--- نوتیف پایین راست برای هات‌کی‌ها (stackable، جدا از جوین)
+-- نوتیف Zoom in/out برای تایمر (مرکز صفحه)
 ---------------------------------------------------------
-local function showToggleNotification(featureName, isOn)
-    -- نوتیف هات‌کی مستقل از UI اصلی است (ScreenGui.Enabled روی این اثر ندارد)
+local function showZoomNotification(text, strokeColor, textColor, duration)
     local notifGui = Instance.new("ScreenGui")
-    notifGui.Name = "ZynixToggleNotification"
+    notifGui.Name = "ZynixTimedNotification"
     notifGui.ResetOnSpawn = false
     notifGui.Parent = playerGui
 
-    local height = 60
-    local spacing = 8
-
-    -- اگر نوتیف جوین وجود دارد، نوتیف هات‌کی بالای آن‌ها شروع شود
-    local joinCount = #State.JoinNotifs
-    local baseYOffset = -20 - (height + spacing) * joinCount
-
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 260, 0, height)
-    frame.AnchorPoint = Vector2.new(1, 1)
-    -- از بیرونِ صفحه وارد می‌شود
-    frame.Position = UDim2.new(1, 280, 1, baseYOffset)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)  -- بک‌گراند مشکی
-    frame.BackgroundTransparency = 0.3                 -- اوپسیتی حدود 70٪
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
     frame.Parent = notifGui
 
@@ -518,7 +530,133 @@ local function showToggleNotification(featureName, isOn)
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 230, 0)        -- استروک زرد
+    stroke.Color = strokeColor or Color3.fromRGB(255, 0, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.RichText = true
+    label.TextColor3 = textColor or Color3.fromRGB(255,0,0)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Text = text
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(duration or 3)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+---------------------------------------------------------
+-- نوتیف FreeCam: Press M to unlock your mouse (Zoom in/out)
+---------------------------------------------------------
+local function showFreeCamMouseHint()
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixFreeCamMouseHint"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچیک
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 230, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.RichText = true
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Text = '<font color="rgb(255,255,255)">Press </font><font color="rgb(255,255,0)">M</font><font color="rgb(255,255,255)"> to unlock your mouse</font>'
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(2)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+---------------------------------------------------------
+-- نوتیف پایین راست برای هات‌کی‌ها (stackable، جدا از جوین)
+---------------------------------------------------------
+local function showToggleNotification(featureName, isOn)
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixToggleNotification"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local height = 60
+    local spacing = 8
+
+    local joinCount = #State.JoinNotifs
+    local baseYOffset = -20 - (height + spacing) * joinCount
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 260, 0, height)
+    frame.AnchorPoint = Vector2.new(1, 1)
+    frame.Position = UDim2.new(1, 280, 1, baseYOffset)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 230, 0)
     stroke.Parent = frame
 
     local label = Instance.new("TextLabel")
@@ -541,7 +679,6 @@ local function showToggleNotification(featureName, isOn)
     )
     label.Parent = frame
 
-    -- نوتیف‌های هات‌کی قبلی را یک طبقه بالاتر ببریم
     local delta = height + spacing
     for _, info in ipairs(State.ToggleNotifs) do
         if info.Frame and info.Frame.Parent then
@@ -557,7 +694,6 @@ local function showToggleNotification(featureName, isOn)
 
     table.insert(State.ToggleNotifs, {Gui = notifGui, Frame = frame})
 
-    -- انیمیشن ورود از راست
     local tweenIn = TweenService:Create(
         frame,
         TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
@@ -568,7 +704,6 @@ local function showToggleNotification(featureName, isOn)
     task.spawn(function()
         task.wait(2.5)
         local currentPos = frame.Position
-        -- خروج به سمت راست و فید اوت
         local tweenOut = TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
@@ -951,13 +1086,10 @@ localPlayer.CharacterAdded:Connect(function()
     if State.Fly_Enabled then
         stopFly()
     end
-    if State.Noclip_Enabled then
-        task.wait(1)
-    end
 end)
 
 ---------------------------------------------------------
--- FreeCam logic
+-- FreeCam logic (با فریز شدن پلیر)
 ---------------------------------------------------------
 local function setFreeCamEnabled(state)
     if not FeatureEnabled.freecam then return end
@@ -970,6 +1102,21 @@ local function setFreeCamEnabled(state)
         State.Cam_OrigSubject = camera.CameraSubject
         State.Cam_OrigCFrame = camera.CFrame
 
+        -- freeze player
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and getRoot(char)
+        if hum then
+            State.FreeCam_OrigWalkSpeed = hum.WalkSpeed
+            State.FreeCam_OrigJumpPower = hum.JumpPower
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+        end
+        if root then
+            State.FreeCam_OrigAnchored = root.Anchored
+            root.Anchored = true
+        end
+
         local cf = camera.CFrame
         State.FreeCam_Pos = cf.Position
         local look = cf.LookVector
@@ -980,9 +1127,30 @@ local function setFreeCamEnabled(state)
         camera.CameraType = Enum.CameraType.Scriptable
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
         UserInputService.MouseIconEnabled = false
+        State.FreeCam_MouseLocked = true
+
+        -- نوتیف FreeCam موس
+        showFreeCamMouseHint()
     else
         State.FreeCam_Enabled = false
         State.FreeCam_MoveDir = Vector3.zero
+        State.FreeCam_MouseLocked = false
+
+        -- unfreeze player
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and getRoot(char)
+        if hum then
+            if State.FreeCam_OrigWalkSpeed then
+                hum.WalkSpeed = State.FreeCam_OrigWalkSpeed
+            end
+            if State.FreeCam_OrigJumpPower then
+                hum.JumpPower = State.FreeCam_OrigJumpPower
+            end
+        end
+        if root ~= nil and State.FreeCam_OrigAnchored ~= nil then
+            root.Anchored = State.FreeCam_OrigAnchored
+        end
 
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         UserInputService.MouseIconEnabled = true
@@ -1035,63 +1203,6 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 ---------------------------------------------------------
--- Noclip logic (الهام گرفته از Infinite Yield)
----------------------------------------------------------
-local Clip = true
-local function setNoclipEnabled(on)
-    if not FeatureEnabled.noclip then return end
-    if on == State.Noclip_Enabled then return end
-    State.Noclip_Enabled = on
-    Clip = not on and false or true
-
-    if State.Noclip_Conn then
-        State.Noclip_Conn:Disconnect()
-        State.Noclip_Conn = nil
-    end
-
-    if on then
-        State.Noclip_Conn = RunService.Stepped:Connect(function()
-            if not State.Noclip_Enabled then return end
-            local char = localPlayer.Character
-            if not char then return end
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum:ChangeState(Enum.HumanoidStateType.Physics)
-            end
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide == true then
-                    part.CanCollide = false
-                end
-            end
-        end)
-    else
-        local char = localPlayer.Character
-        if char then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
-    end
-
-    if State.NoclipStateBtn then
-        if on then
-            State.NoclipStateBtn.Text = 'Noclip: <font color="rgb(0,255,0)">ON</font>'
-        else
-            State.NoclipStateBtn.Text = 'Noclip: <font color="rgb(255,0,0)">OFF</font>'
-        end
-    end
-
-    showToggleNotification("Noclip", State.Noclip_Enabled)
-end
-
-local function toggleNoclip()
-    if not FeatureEnabled.noclip then return end
-    setNoclipEnabled(not State.Noclip_Enabled)
-end
-
----------------------------------------------------------
 -- Config Save / Load
 ---------------------------------------------------------
 local CONFIG_FOLDER = "ZynixRBXC"
@@ -1121,7 +1232,6 @@ local function buildConfig()
 
         Fly_HotKey = State.Fly_HotKeyName,
         FreeCam_HotKey = State.FreeCam_HotKeyName,
-        Noclip_HotKey = State.Noclip_HotKeyName,
         Hide_HotKey = State.Hide_HotKeyName,
 
         ESP_ColorIndex = colorIndex or 1,
@@ -1161,15 +1271,6 @@ local function applyConfig(cfg)
         State.FreeCam_HotKeyName = cfg.FreeCam_HotKey
         if State.FreeCamHotkeyBtn then
             State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
-        end
-    end
-
-    if cfg.Noclip_HotKey and FeatureEnabled.noclip then
-        local kc = keycodeFromName(cfg.Noclip_HotKey)
-        State.Noclip_HotKey = kc
-        State.Noclip_HotKeyName = cfg.Noclip_HotKey
-        if State.NoclipHotkeyBtn then
-            State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
         end
     end
 
@@ -1217,7 +1318,7 @@ local function saveConfig()
         return
     end
 
-    local s, err = pcall(function()
+    local s, _ = pcall(function()
         writefile(path, enc)
     end)
 
@@ -1277,6 +1378,9 @@ local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
 local blueBtnColor = Color3.fromRGB(0,110,220)
 
+local MAIN_DEFAULT_SIZE = UDim2.new(0, 220, 0, 310)
+local MAIN_DEFAULT_POS = UDim2.new(0, 20, 1, -330)
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
 ScreenGui.ResetOnSpawn = false
@@ -1285,8 +1389,8 @@ ScreenGui.Parent = playerGui
 
 -- پنجره اصلی
 local mainWindow = Instance.new("Frame")
-mainWindow.Size = UDim2.new(0, 220, 0, 310)
-mainWindow.Position = UDim2.new(0, 20, 1, -330)
+mainWindow.Size = MAIN_DEFAULT_SIZE
+mainWindow.Position = MAIN_DEFAULT_POS
 mainWindow.BackgroundColor3 = Color3.fromRGB(25,25,30)
 mainWindow.BackgroundTransparency = 0.3
 mainWindow.Active = true
@@ -1308,10 +1412,10 @@ mainStroke.Parent = mainWindow
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(80,50,10)
+title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- بک گراند قهوه‌ای
 title.BackgroundTransparency = 0
 title.Text = "Zynix RBXC [BETA]"
-title.TextColor3 = Color3.fromRGB(255,255,255)
+title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -1319,14 +1423,6 @@ title.Parent = mainWindow
 local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
-
-local titleStroke = Instance.new("UIStroke")
-titleStroke.Thickness = 1.3
-titleStroke.Color = Color3.fromRGB(255,140,0)
-titleStroke.Parent = title
-
-title.TextStrokeColor3 = Color3.fromRGB(255,255,255)
-title.TextStrokeTransparency = 0.6
 
 -- User + Rank (بدون کلمه‌ی User)
 local nameToShow = CONFIG_NAME or localPlayer.Name
@@ -1365,9 +1461,22 @@ userLabel.Font = Enum.Font.Gotham
 userLabel.TextXAlignment = Enum.TextXAlignment.Left
 userLabel.Parent = mainWindow
 
+-- ZC timer label زیر Name - Rank
+local zcLabel = Instance.new("TextLabel")
+zcLabel.Position = UDim2.new(0,10,0,72)
+zcLabel.Size = UDim2.new(1,-20,0,18)
+zcLabel.BackgroundTransparency = 1
+zcLabel.Text = "ZC: --:--"
+zcLabel.TextColor3 = Color3.fromRGB(220,220,220)
+zcLabel.TextScaled = true
+zcLabel.Font = Enum.Font.Gotham
+zcLabel.TextXAlignment = Enum.TextXAlignment.Left
+zcLabel.Parent = mainWindow
+State.ZC_Label = zcLabel
+
 local mainScroll = Instance.new("ScrollingFrame")
-mainScroll.Position = UDim2.new(0,10,0,80)
-mainScroll.Size = UDim2.new(1,-20,1,-90)
+mainScroll.Position = UDim2.new(0,10,0,100) -- پایین‌تر به خاطر ZC
+mainScroll.Size = UDim2.new(1,-20,1,-110)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
 mainScroll.ScrollBarThickness = 4
@@ -1401,53 +1510,145 @@ local function createSettingsWindow(name, w, h)
     return frame
 end
 
-local flyWindow     = createSettingsWindow("FlyWindow", 230, 200)
-local espWindow     = createSettingsWindow("ESPWindow", 230, 240)
-local noclipWindow  = createSettingsWindow("NoclipWindow", 230, 160)
-local teleportWindow= createSettingsWindow("TeleportWindow", 260, 260)
-local freeCamWindow = createSettingsWindow("FreeCamWindow", 230, 200)
-local settingsWindow= createSettingsWindow("SettingsWindow", 230, 200)
+local flyWindow      = createSettingsWindow("FlyWindow", 230, 200)
+local espWindow      = createSettingsWindow("ESPWindow", 230, 240)
+local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
+local freeCamWindow  = createSettingsWindow("FreeCamWindow", 230, 200)
+local settingsWindow = createSettingsWindow("SettingsWindow", 230, 200)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
-State.Noclip_Window = noclipWindow
 State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
 State.Settings_Window = settingsWindow
 
-local function stackSettingsWindows()
-    local basePos = mainWindow.Position
-    local baseSize = mainWindow.Size
+-- سیستم جدید استک کردن پنل‌ها با انیمیشن
+local SettingsWindows = {}
+local WindowInfoByFrame = {}
 
-    local xScale = basePos.X.Scale
-    local xOff = basePos.X.Offset + baseSize.X.Offset + 10
-    local yScale = basePos.Y.Scale
-    local yOff = basePos.Y.Offset
-
-    local function place(win)
-        if not win.Visible then return end
-        win.Position = UDim2.new(xScale, xOff, yScale, yOff)
-        yOff = yOff + win.Size.Y.Offset + 10
-    end
-
-    place(flyWindow)
-    place(noclipWindow)
-    place(teleportWindow)
-    place(espWindow)
-    place(freeCamWindow)
-    place(settingsWindow)
+local function registerSettingsWindow(frame)
+    if not frame then return end
+    local info = {frame = frame, open = false, size = frame.Size}
+    table.insert(SettingsWindows, info)
+    WindowInfoByFrame[frame] = info
 end
 
-mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
+registerSettingsWindow(flyWindow)
+registerSettingsWindow(teleportWindow)
+registerSettingsWindow(espWindow)
+registerSettingsWindow(freeCamWindow)
+registerSettingsWindow(settingsWindow)
 
--- انیمیشن باز و بسته شدن پنل‌ها حذف شده (فقط Visible on/off)
-local function animateWindow(window, makeVisible)
-    if makeVisible then
-        window.Visible = true
-    else
-        window.Visible = false
+local function layoutSettingsWindows(animated)
+    local basePos = mainWindow.Position
+    local baseSize = mainWindow.Size
+    local xScale = basePos.X.Scale
+    local yScale = basePos.Y.Scale
+    local xOff = basePos.X.Offset + baseSize.X.Offset + 10
+    local yOff = basePos.Y.Offset
+
+    for _, info in ipairs(SettingsWindows) do
+        if info.open then
+            local frame = info.frame
+            local targetPos = UDim2.new(xScale, xOff, yScale, yOff)
+            yOff = yOff + info.size.Y.Offset + 10
+
+            if not frame.Visible then
+                frame.Position = targetPos
+            end
+
+            if animated then
+                TweenService:Create(
+                    frame,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                    { Position = targetPos }
+                ):Play()
+            else
+                frame.Position = targetPos
+            end
+        end
     end
-    stackSettingsWindows()
+end
+
+local function toggleSettingsWindow(frame)
+    local info = WindowInfoByFrame[frame]
+    if not info then return end
+
+    if not info.open then
+        info.open = true
+        frame.Visible = true
+        frame.Size = UDim2.new(info.size.X.Scale, info.size.X.Offset, 0, 0)
+
+        layoutSettingsWindows(false)
+
+        TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Size = info.size }
+        ):Play()
+
+        layoutSettingsWindows(true)
+    else
+        info.open = false
+
+        local tween = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(info.size.X.Scale, info.size.X.Offset, 0, 0) }
+        )
+        tween:Play()
+        tween.Completed:Connect(function()
+            if info.open then
+                frame.Size = info.size
+                return
+            end
+            frame.Visible = false
+            frame.Size = info.size
+        end)
+
+        layoutSettingsWindows(true)
+    end
+end
+
+-- وقتی منوی اصلی جابه‌جا می‌شود، پنل‌ها بدون انیمیشن همراهش حرکت کنند
+mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
+    layoutSettingsWindows(false)
+end)
+
+---------------------------------------------------------
+-- Zoom in / Zoom out برای منوی اصلی
+---------------------------------------------------------
+function showMainUI()
+    if not ScreenGui or not mainWindow then return end
+    ScreenGui.Enabled = true
+    mainWindow.Visible = true
+    mainWindow.Size = UDim2.new(0, 10, 0, 10)
+    mainWindow.Position = MAIN_DEFAULT_POS
+
+    local tweenIn = TweenService:Create(
+        mainWindow,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = MAIN_DEFAULT_SIZE }
+    )
+    tweenIn:Play()
+    State.UIHidden = false
+end
+
+function hideMainUI()
+    if not ScreenGui or not mainWindow then return end
+    local tweenOut = TweenService:Create(
+        mainWindow,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+        { Size = UDim2.new(0, 10, 0, 10) }
+    )
+    tweenOut:Play()
+    tweenOut.Completed:Connect(function()
+        if not ScreenGui then return end
+        ScreenGui.Enabled = false
+        mainWindow.Visible = false
+        mainWindow.Size = MAIN_DEFAULT_SIZE
+    end)
+    State.UIHidden = true
 end
 
 ---------------------------------------------------------
@@ -1665,75 +1866,6 @@ if FeatureEnabled.freecam then
     freeHotkeyBtn.MouseButton1Click:Connect(function()
         State.WaitingForFreeCamHotKey = true
         freeHotkeyBtn.Text = "HotKey: [Press Key]"
-    end)
-end
-
----------------------------------------------------------
--- Noclip Window UI
----------------------------------------------------------
-if FeatureEnabled.noclip then
-    local noclipTitle = Instance.new("TextLabel")
-    noclipTitle.Position = UDim2.new(0,10,0,10)
-    noclipTitle.Size = UDim2.new(1,-20,0,25)
-    noclipTitle.BackgroundTransparency = 1
-    noclipTitle.Text = "Noclip Settings"
-    noclipTitle.TextColor3 = Color3.fromRGB(200,200,255)
-    noclipTitle.TextScaled = true
-    noclipTitle.Font = Enum.Font.GothamBold
-    noclipTitle.Parent = noclipWindow
-
-    local noclipScroll = Instance.new("ScrollingFrame")
-    noclipScroll.Position = UDim2.new(0,10,0,45)
-    noclipScroll.Size = UDim2.new(1,-20,1,-55)
-    noclipScroll.BackgroundTransparency = 1
-    noclipScroll.BorderSizePixel = 0
-    noclipScroll.ScrollBarThickness = 4
-    noclipScroll.CanvasSize = UDim2.new(0,0,0,100)
-    noclipScroll.Parent = noclipWindow
-
-    local noclipScrollCorner = Instance.new("UICorner")
-    noclipScrollCorner.CornerRadius = UDim.new(0,8)
-    noclipScrollCorner.Parent = noclipScroll
-
-    local noclipStateBtn = Instance.new("TextButton")
-    noclipStateBtn.Position = UDim2.new(0,0,0,0)
-    noclipStateBtn.Size = UDim2.new(1,0,0,35)
-    noclipStateBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    noclipStateBtn.Font = Enum.Font.GothamSemibold
-    noclipStateBtn.TextScaled = true
-    noclipStateBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    noclipStateBtn.RichText = true
-    noclipStateBtn.Text = 'Noclip: <font color="rgb(255,0,0)">OFF</font>'
-    noclipStateBtn.Parent = noclipScroll
-    addHoverEffect(noclipStateBtn, noclipStateBtn.BackgroundColor3)
-
-    local noclipStateCorner = Instance.new("UICorner")
-    noclipStateCorner.CornerRadius = UDim.new(0,8)
-    noclipStateCorner.Parent = noclipStateBtn
-
-    State.NoclipStateBtn = noclipStateBtn
-    noclipStateBtn.MouseButton1Click:Connect(toggleNoclip)
-
-    local noclipHotkeyBtn = Instance.new("TextButton")
-    noclipHotkeyBtn.Position = UDim2.new(0,0,0,45)
-    noclipHotkeyBtn.Size = UDim2.new(1,0,0,35)
-    noclipHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    noclipHotkeyBtn.Font = Enum.Font.GothamSemibold
-    noclipHotkeyBtn.TextScaled = true
-    noclipHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    noclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
-    noclipHotkeyBtn.Parent = noclipScroll
-    addHoverEffect(noclipHotkeyBtn, noclipHotkeyBtn.BackgroundColor3)
-
-    local noclipHotkeyCorner = Instance.new("UICorner")
-    noclipHotkeyCorner.CornerRadius = UDim.new(0,8)
-    noclipHotkeyCorner.Parent = noclipHotkeyBtn
-
-    State.NoclipHotkeyBtn = noclipHotkeyBtn
-
-    noclipHotkeyBtn.MouseButton1Click:Connect(function()
-        State.WaitingForNoclipHotKey = true
-        noclipHotkeyBtn.Text = "HotKey: [Press Key]"
     end)
 end
 
@@ -2252,7 +2384,7 @@ if FeatureEnabled.setting then
 end
 
 ---------------------------------------------------------
--- دکمه‌های پنجره اصلی
+-- دکمه‌های پنجره اصلی (با انیمیشن Zoom پنل‌ها)
 ---------------------------------------------------------
 local y = 0
 local function createMainButton(text, color, callback)
@@ -2280,52 +2412,43 @@ local function createMainButton(text, color, callback)
     return btn
 end
 
-local flyPanelVisible      = false
-local noclipPanelVisible   = false
-local teleportPanelVisible = false
-local espPanelVisible      = false
-local freeCamPanelVisible  = false
-local settingsPanelVisible = false
-
 if FeatureEnabled.fly then
     createMainButton("Fly", grayBtnColor, function()
-        flyPanelVisible = not flyPanelVisible
-        animateWindow(flyWindow, flyPanelVisible)
-    end)
-end
-
-if FeatureEnabled.noclip then
-    createMainButton("Noclip", grayBtnColor, function()
-        noclipPanelVisible = not noclipPanelVisible
-        animateWindow(noclipWindow, noclipPanelVisible)
+        if State.Fly_Window then
+            toggleSettingsWindow(State.Fly_Window)
+        end
     end)
 end
 
 if FeatureEnabled.teleport then
     createMainButton("Teleportation", grayBtnColor, function()
-        teleportPanelVisible = not teleportPanelVisible
-        animateWindow(teleportWindow, teleportPanelVisible)
+        if State.Teleport_Window then
+            toggleSettingsWindow(State.Teleport_Window)
+        end
     end)
 end
 
 if FeatureEnabled.esp then
     createMainButton("ESP", grayBtnColor, function()
-        espPanelVisible = not espPanelVisible
-        animateWindow(espWindow, espPanelVisible)
+        if State.ESP_Window then
+            toggleSettingsWindow(State.ESP_Window)
+        end
     end)
 end
 
 if FeatureEnabled.freecam then
     createMainButton("FreeCam", grayBtnColor, function()
-        freeCamPanelVisible = not freeCamPanelVisible
-        animateWindow(freeCamWindow, freeCamPanelVisible)
+        if State.FreeCam_Window then
+            toggleSettingsWindow(State.FreeCam_Window)
+        end
     end)
 end
 
 if FeatureEnabled.setting then
     createMainButton("Settings", blueBtnColor, function()
-        settingsPanelVisible = not settingsPanelVisible
-        animateWindow(settingsWindow, settingsPanelVisible)
+        if State.Settings_Window then
+            toggleSettingsWindow(State.Settings_Window)
+        end
     end)
 end
 
@@ -2333,9 +2456,158 @@ local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
 ---------------------------------------------------------
--- Global Input (hotkeys + FreeCam move + Hide key)
+-- پنل آپدیت‌ها (Zoom In / Zoom Out + متن جدید)
+---------------------------------------------------------
+showUpdatesPanel = function()
+    if not ScreenGui then return end
+
+    local frame = Instance.new("Frame")
+    frame.Name = "ZynixUpdatesPanel"
+    frame.AnchorPoint = Vector2.new(0.5,0.5)
+    frame.Position = UDim2.new(0.5,0,0.5,0)
+    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچک برای زوم
+    frame.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = ScreenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,12)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255,255,255)
+    stroke.Parent = frame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Size = UDim2.new(1,-20,0,40)
+    titleLabel.Position = UDim2.new(0,10,0,10)
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextScaled = true
+    titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+    titleLabel.Text = "Updates!"
+    titleLabel.Parent = frame
+
+    local updatesLabel = Instance.new("TextLabel")
+    updatesLabel.BackgroundTransparency = 1
+    updatesLabel.Size = UDim2.new(1,-30,1,-60)
+    updatesLabel.Position = UDim2.new(0,15,0,55)
+    updatesLabel.Font = Enum.Font.Gotham
+    updatesLabel.TextScaled = true
+    updatesLabel.TextColor3 = Color3.fromRGB(255,255,255)
+    updatesLabel.RichText = true
+    updatesLabel.TextXAlignment = Enum.TextXAlignment.Left
+    updatesLabel.TextYAlignment = Enum.TextYAlignment.Top
+    updatesLabel.TextWrapped = true
+
+    updatesLabel.Text =
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Added zoom in / zoom out animation to the "Press M to unlock your mouse" notification</font>\n' ..
+        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
+        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
+
+    updatesLabel.Parent = frame
+
+    -- Zoom In
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 340, 0, 220), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        task.wait(6) -- 6 ثانیه روی صفحه بماند
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        frame:Destroy()
+    end)
+end
+
+---------------------------------------------------------
+-- تابع تایمر ZC (Session Timer)
+---------------------------------------------------------
+function startSessionTimer()
+    if SESSION_INITIAL_SECONDS <= 0 then return end
+    if State.SessionExpired then return end
+
+    State.SessionTotalTime = SESSION_INITIAL_SECONDS
+    State.SessionTimeLeft = SESSION_INITIAL_SECONDS
+
+    if State.ZC_Label then
+        local m = math.floor(State.SessionTimeLeft / 60)
+        local s = State.SessionTimeLeft % 60
+        State.ZC_Label.TextColor3 = Color3.fromRGB(220,220,220)
+        State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
+    end
+
+    task.spawn(function()
+        local warned = false
+        while State.SessionTimeLeft > 0 and not State.SessionExpired do
+            task.wait(1)
+            State.SessionTimeLeft = State.SessionTimeLeft - 1
+
+            if State.ZC_Label then
+                local m = math.floor(State.SessionTimeLeft / 60)
+                local s = State.SessionTimeLeft % 60
+                State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
+            end
+
+            if State.SessionTimeLeft <= 10 and not warned then
+                warned = true
+                if State.ZC_Label then
+                    State.ZC_Label.TextColor3 = Color3.fromRGB(255,0,0)
+                end
+                showZoomNotification(
+                    'You have <font color="rgb(255,0,0)">10</font> seconds left!',
+                    Color3.fromRGB(255,255,0),
+                    Color3.fromRGB(255,255,0),
+                    3
+                )
+            end
+        end
+
+        if State.SessionExpired then return end
+        State.SessionExpired = true
+
+        -- بستن همه پنل‌های باز با Zoom Out
+        for _, info in ipairs(SettingsWindows) do
+            if info.open then
+                toggleSettingsWindow(info.frame)
+            end
+        end
+
+        -- خاموش کردن همه‌چیز
+        if FeatureEnabled.freecam then setFreeCamEnabled(false) end
+        if FeatureEnabled.fly then stopFly() end
+        if FeatureEnabled.esp then setESPEnabled(false) end
+
+        hideMainUI()
+
+        -- نوتیف اتمام زمان
+        showZoomNotification(
+            "Your time is up!",
+            Color3.fromRGB(255,0,0),
+            Color3.fromRGB(255,0,0),
+            4
+        )
+    end)
+end
+
+---------------------------------------------------------
+-- Global Input (hotkeys + FreeCam move + Hide key + FreeCam M toggle)
 ---------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
+    if State.SessionExpired then return end
     if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
@@ -2369,23 +2641,19 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    if State.WaitingForNoclipHotKey and FeatureEnabled.noclip then
-        State.WaitingForNoclipHotKey = false
-        State.Noclip_HotKey = key
-        State.Noclip_HotKeyName = key.Name or "Key"
-        if State.NoclipHotkeyBtn then
-            State.NoclipHotkeyBtn.Text = "HotKey: " .. State.Noclip_HotKeyName
-        end
-        return
-    end
-
+    -- Hide UI با Zoom in/Zoom out
     if State.Hide_HotKey and key == State.Hide_HotKey then
         if ScreenGui then
-            ScreenGui.Enabled = not ScreenGui.Enabled
+            if not ScreenGui.Enabled or State.UIHidden then
+                showMainUI()
+            else
+                hideMainUI()
+            end
         end
         return
     end
 
+    -- Hotkeys (Fly / FreeCam)
     if FeatureEnabled.fly and State.Fly_HotKey and key == State.Fly_HotKey then
         toggleFly()
         return
@@ -2396,11 +2664,21 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    if FeatureEnabled.noclip and State.Noclip_HotKey and key == State.Noclip_HotKey then
-        toggleNoclip()
+    -- هنگام فعال بودن FreeCam: M برای لاک/آنلاک موس
+    if FeatureEnabled.freecam and State.FreeCam_Enabled and key == Enum.KeyCode.M then
+        if State.FreeCam_MouseLocked then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+            State.FreeCam_MouseLocked = false
+        else
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+            UserInputService.MouseIconEnabled = false
+            State.FreeCam_MouseLocked = true
+        end
         return
     end
 
+    -- حرکت FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled then
         if key == Enum.KeyCode.W then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
@@ -2419,6 +2697,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 UserInputService.InputEnded:Connect(function(input, gp)
+    if State.SessionExpired then return end
     if gp or not State.FreeCam_Enabled or not FeatureEnabled.freecam then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
