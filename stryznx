@@ -1,9 +1,3 @@
--- Zynix RBXC [BETA] - Single Script (NoClip removed / FreeCam mouse hint / Updates panel + Zoom animations)
-
---//////////////////////////////////////////////////////
---//////////////  OBFUSCATED SETTINGS  /////////////////
---//////////////////////////////////////////////////////
-
 local PIN_TAG = "szynixloader.b1uu1x1ld1"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
@@ -14,12 +8,10 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.5"
+local TIME_TAG = "szynixzmn.1"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
-local TIME_MINUTES = tonumber(TIME_RAW:match("%d+")) or 0
-local SESSION_INITIAL_SECONDS = TIME_MINUTES * 60
+local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
--- esp, freecam, fly, teleport, setting
 local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
@@ -38,10 +30,6 @@ local FeatureEnabled = {
     setting  = not OffFeatures["setting"],
 }
 
---//////////////////////////////////////////////////////
---//////////////////  SERVICES  ////////////////////////
---//////////////////////////////////////////////////////
-
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -52,14 +40,10 @@ local HttpService = game:GetService("HttpService")
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
--- اگر قبلاً اجرا شده، برگرد
 if playerGui:FindFirstChild("ZynixUI") then
     return
 end
 
----------------------------------------------------------
--- حالت کلی (State)
----------------------------------------------------------
 local State = {
     ESP_Enabled = false,
     ESP_Color = Color3.fromRGB(255, 0, 0),
@@ -85,17 +69,15 @@ local State = {
     FreeCam_Pos = Vector3.new(0,0,0),
     FreeCam_Yaw = 0,
     FreeCam_Pitch = 0,
-    FreeCam_MouseLocked = false, -- برای سوییچ لاک/آنلاک موس
+    FreeCam_MouseLocked = false,
     Cam_OrigType = nil,
     Cam_OrigSubject = nil,
     Cam_OrigCFrame = nil,
 
-    -- freeze player while FreeCam
     FreeCam_OrigWalkSpeed = nil,
     FreeCam_OrigJumpPower = nil,
     FreeCam_OrigAnchored = nil,
 
-    -- Hide UI
     Hide_HotKey = Enum.KeyCode.Insert,
     Hide_HotKeyName = "Insert",
     WaitingForHideHotKey = false,
@@ -103,11 +85,9 @@ local State = {
 
     Teleport_Waypoints = {},
 
-    -- Hotkey waiting flags
     WaitingForFlyHotKey = false,
     WaitingForFreeCamHotKey = false,
 
-    -- UI refs
     MainWindow = nil,
     ESP_Window = nil,
     Fly_Window = nil,
@@ -131,27 +111,29 @@ local State = {
     HideHotkeyBtn = nil,
     ConfigNameBox = nil,
 
-    -- toggle notifications (bottom-right)
     ToggleNotifs = {},
-    -- join notifications (bottom-right, جدا)
     JoinNotifs = {},
 
-    -- ZC timer
-    SessionTimeLeft = 0,
-    SessionTotalTime = 0,
-    SessionExpired = false,
-    ZC_Label = nil,
+    ZC_TotalSeconds = 0,
+    ZC_RemainingSeconds = 0,
+    ZC_Enabled = false,
+    ZC_Expired = false,
+    ZC_WarningShown = false,
+    ZC_TimerLabel = nil,
+    ZC_TimerRunning = false,
 }
 
--- برای بعداً (پنل آپدیت‌ها و زوم کردن منوی اصلی)
 local showUpdatesPanel
 local showMainUI
 local hideMainUI
-local startSessionTimer
+local showZCTimeInfoNotification
+local startZCTimer
+local disableEverythingAndClose
 
----------------------------------------------------------
--- Helper functions
----------------------------------------------------------
+State.ZC_TotalSeconds = (CONFIG_TIME_MIN or 0) * 60
+State.ZC_RemainingSeconds = State.ZC_TotalSeconds
+State.ZC_Enabled = State.ZC_TotalSeconds > 0
+
 local function addHoverEffect(button, baseColor)
     button.AutoButtonColor = false
     button.BackgroundColor3 = baseColor
@@ -192,9 +174,13 @@ local function findPlayerByName(partial)
     return nil
 end
 
----------------------------------------------------------
--- Loading + PIN GUI (وسط صفحه)
----------------------------------------------------------
+local function formatTime(sec)
+    sec = math.max(0, math.floor(sec))
+    local m = math.floor(sec / 60)
+    local s = sec % 60
+    return string.format("%02d:%02d", m, s)
+end
+
 local function createLoadingGui()
     local loadingGui = Instance.new("ScreenGui")
     loadingGui.Name = "ZynixLoading"
@@ -202,11 +188,11 @@ local function createLoadingGui()
     loadingGui.Parent = playerGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 280, 0, 140)
+    frame.Size = UDim2.new(0, 10, 0, 10)
     frame.AnchorPoint = Vector2.new(0.5, 0.5)
     frame.Position = UDim2.new(0.5, 0, 0.5, 0)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.3
+    frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
     frame.Parent = loadingGui
 
@@ -214,15 +200,20 @@ local function createLoadingGui()
     corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
 
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255,255,255)
+    stroke.Parent = frame
+
     local title = Instance.new("TextLabel")
     title.BackgroundTransparency = 1
     title.Size = UDim2.new(1, -20, 0, 35)
     title.Position = UDim2.new(0,10,0,8)
     title.Font = Enum.Font.GothamBold
     title.TextScaled = true
-    title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
+    title.TextColor3 = Color3.fromRGB(255,255,255)
     title.TextXAlignment = Enum.TextXAlignment.Center
-    title.Text = "Zynix RBXC [BETA]"
+    title.Text = "Zynix RBXC [v0.1]"
     title.Parent = frame
 
     local pinLabel = Instance.new("TextLabel")
@@ -231,7 +222,7 @@ local function createLoadingGui()
     pinLabel.Position = UDim2.new(0,10,0,46)
     pinLabel.Font = Enum.Font.Gotham
     pinLabel.TextScaled = true
-    pinLabel.TextColor3 = Color3.fromRGB(220,220,220)
+    pinLabel.TextColor3 = Color3.fromRGB(255,255,255)
     pinLabel.TextXAlignment = Enum.TextXAlignment.Left
     pinLabel.Text = "Enter PIN:"
     pinLabel.Parent = frame
@@ -275,8 +266,17 @@ local function createLoadingGui()
     status.TextScaled = true
     status.TextColor3 = Color3.fromRGB(255,255,255)
     status.TextXAlignment = Enum.TextXAlignment.Center
+    status.TextYAlignment = Enum.TextYAlignment.Center
+    status.TextWrapped = true
     status.Text = ""
     status.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 280, 0, 140), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
 
     local animRunning = false
 
@@ -284,18 +284,20 @@ local function createLoadingGui()
         if animRunning then return end
         animRunning = true
         task.spawn(function()
-            local dots = 0
+            local idx = 1
+            local waits = {"Waiting.", "Waiting..", "Waiting..."}
             while animRunning do
-                dots = (dots % 3) + 1
+                local waitStr = waits[idx]
+                idx = idx % #waits + 1
                 status.TextColor3 = Color3.fromRGB(255,255,255)
-                status.Text = "Loading" .. string.rep(".", dots)
+                status.Text = "Loading...\n" .. waitStr
                 task.wait(0.4)
             end
         end)
     end
 
     local function handleSuccess()
-        status.TextColor3 = Color3.fromRGB(0,255,0)
+        status.TextColor3 = Color3.fromRGB(255,255,255)
         status.Text = "Successful!"
         pinBox.Visible = false
         pinLabel.Visible = false
@@ -306,7 +308,7 @@ local function createLoadingGui()
             startLoadingAnimation()
             task.wait(2)
             animRunning = false
-            status.TextColor3 = Color3.fromRGB(0,255,0)
+            status.TextColor3 = Color3.fromRGB(255,255,255)
             status.Text = "Loaded!"
             task.wait(2)
 
@@ -314,9 +316,17 @@ local function createLoadingGui()
                 task.wait(0.1)
             end
 
-            if loadingGui then
+            if loadingGui and frame then
+                local zoomOut = TweenService:Create(
+                    frame,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+                    { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+                )
+                zoomOut:Play()
+                zoomOut.Completed:Wait()
                 loadingGui:Destroy()
             end
+
             if State.MainWindow then
                 if showMainUI then
                     showMainUI()
@@ -325,14 +335,12 @@ local function createLoadingGui()
                 end
             end
 
-            -- بعد از لود منو، پنل آپدیت‌ها
             if showUpdatesPanel then
                 showUpdatesPanel()
             end
 
-            -- شروع تایمر ZC (اگر تنظیم شده باشد)
-            if SESSION_INITIAL_SECONDS > 0 and startSessionTimer then
-                startSessionTimer()
+            if startZCTimer and State.ZC_Enabled and State.ZC_TotalSeconds > 0 then
+                startZCTimer()
             end
         end)
     end
@@ -342,7 +350,7 @@ local function createLoadingGui()
         if txt == CORRECT_PIN then
             handleSuccess()
         else
-            status.TextColor3 = Color3.fromRGB(255,0,0)
+            status.TextColor3 = Color3.fromRGB(255,255,255)
             status.Text = "PIN is wrong!"
             pinBox.Text = ""
         end
@@ -358,9 +366,6 @@ end
 
 createLoadingGui()
 
----------------------------------------------------------
--- تابع رنگ فعلی ESP (برای Rainbow)
----------------------------------------------------------
 local function getCurrentESPColor()
     if State.ESP_Rainbow then
         local h = (tick() * 0.25) % 1
@@ -370,9 +375,6 @@ local function getCurrentESPColor()
     end
 end
 
----------------------------------------------------------
--- Join Notification (پایین راست، استک مجزا)
----------------------------------------------------------
 local function showJoinNotification(playerName)
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixJoinNotification"
@@ -455,9 +457,6 @@ local function showJoinNotification(playerName)
     end)
 end
 
----------------------------------------------------------
--- نوتیف وسط صفحه (برای پیام‌های عمومی)
----------------------------------------------------------
 local function showCenterNotification(text, color)
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixCenterNotification"
@@ -506,69 +505,6 @@ local function showCenterNotification(text, color)
     end)
 end
 
----------------------------------------------------------
--- نوتیف Zoom in/out برای تایمر (مرکز صفحه)
----------------------------------------------------------
-local function showZoomNotification(text, strokeColor, textColor, duration)
-    local notifGui = Instance.new("ScreenGui")
-    notifGui.Name = "ZynixTimedNotification"
-    notifGui.ResetOnSpawn = false
-    notifGui.Parent = playerGui
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = notifGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = strokeColor or Color3.fromRGB(255, 0, 0)
-    stroke.Parent = frame
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0,10,0,10)
-    label.Font = Enum.Font.GothamBold
-    label.TextScaled = true
-    label.RichText = true
-    label.TextColor3 = textColor or Color3.fromRGB(255,0,0)
-    label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Text = text
-    label.Parent = frame
-
-    local zoomIn = TweenService:Create(
-        frame,
-        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
-    )
-    zoomIn:Play()
-
-    task.spawn(function()
-        zoomIn.Completed:Wait()
-        task.wait(duration or 3)
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Wait()
-        notifGui:Destroy()
-    end)
-end
-
----------------------------------------------------------
--- نوتیف FreeCam: Press M to unlock your mouse (Zoom in/out)
----------------------------------------------------------
 local function showFreeCamMouseHint()
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixFreeCamMouseHint"
@@ -576,7 +512,7 @@ local function showFreeCamMouseHint()
     notifGui.Parent = playerGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچیک
+    frame.Size = UDim2.new(0, 10, 0, 10)
     frame.AnchorPoint = Vector2.new(0.5, 0.5)
     frame.Position = UDim2.new(0.5, 0, 0.5, 0)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -626,9 +562,6 @@ local function showFreeCamMouseHint()
     end)
 end
 
----------------------------------------------------------
--- نوتیف پایین راست برای هات‌کی‌ها (stackable، جدا از جوین)
----------------------------------------------------------
 local function showToggleNotification(featureName, isOn)
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixToggleNotification"
@@ -723,9 +656,6 @@ local function showToggleNotification(featureName, isOn)
     end)
 end
 
----------------------------------------------------------
--- ESP logic
----------------------------------------------------------
 local colors
 local colorIndex
 local updateESPColorBtn
@@ -776,11 +706,13 @@ local function setESPEnabled(on)
 end
 
 local function toggleESP()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.esp then return end
     setESPEnabled(not State.ESP_Enabled)
 end
 
 local function resetESP()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.esp then return end
     for p, h in pairs(State.Highlights) do
         if h then
@@ -795,7 +727,6 @@ local function resetESP()
     end
 end
 
--- Player ESP & Join
 if FeatureEnabled.esp then
     for _, p in ipairs(Players:GetPlayers()) do
         p.CharacterAdded:Connect(function()
@@ -819,7 +750,6 @@ Players.PlayerAdded:Connect(function(p)
     end
 end)
 
--- Auto refresh ESP
 task.spawn(function()
     while true do
         task.wait(1)
@@ -827,7 +757,6 @@ task.spawn(function()
     end
 end)
 
--- Rainbow ESP رنگ
 RunService.Heartbeat:Connect(function()
     if FeatureEnabled.esp and State.ESP_Rainbow and State.ESP_Enabled then
         local c = getCurrentESPColor()
@@ -845,10 +774,8 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
----------------------------------------------------------
--- Teleportation logic
----------------------------------------------------------
 local function teleportToPlayer(targetName)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     local targetPlayer = findPlayerByName(targetName)
     if not targetPlayer or not targetPlayer.Character then return end
@@ -862,6 +789,7 @@ local function teleportToPlayer(targetName)
 end
 
 local function bringPlayer(targetName)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     local targetPlayer = findPlayerByName(targetName)
     if not targetPlayer or not targetPlayer.Character then return end
@@ -877,6 +805,7 @@ local function bringPlayer(targetName)
 end
 
 local function teleportToLocation(locationName)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     if not locationName or locationName == "" then return end
     local lower = locationName:lower()
@@ -898,6 +827,7 @@ local function teleportToLocation(locationName)
 end
 
 local function addWaypoint(name)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     if not name or name == "" then return end
     local myChar = localPlayer.Character
@@ -908,12 +838,14 @@ local function addWaypoint(name)
 end
 
 local function deleteWaypoint(name)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     if not name or name == "" then return end
     State.Teleport_Waypoints[name] = nil
 end
 
 local function clearWaypoints()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     State.Teleport_Waypoints = {}
 end
@@ -928,6 +860,7 @@ local function getWaypointNames()
 end
 
 local function teleportToWaypoint(name)
+    if State.ZC_Expired then return end
     if not FeatureEnabled.teleport then return end
     if not name or name == "" then return end
     local pos = State.Teleport_Waypoints[name]
@@ -950,9 +883,6 @@ local function updateWaypointLabel()
     end
 end
 
----------------------------------------------------------
--- Fly logic
----------------------------------------------------------
 local function stopFly()
     if not FeatureEnabled.fly then return end
     if not State.Fly_Enabled then return end
@@ -1073,6 +1003,7 @@ local function startFly()
 end
 
 local function toggleFly()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.fly then return end
     if State.Fly_Enabled then
         stopFly()
@@ -1088,21 +1019,19 @@ localPlayer.CharacterAdded:Connect(function()
     end
 end)
 
----------------------------------------------------------
--- FreeCam logic (با فریز شدن پلیر)
----------------------------------------------------------
 local function setFreeCamEnabled(state)
     if not FeatureEnabled.freecam then return end
     if state == State.FreeCam_Enabled then return end
     local camera = workspace.CurrentCamera
 
     if state then
+        if State.ZC_Expired then return end
+
         State.FreeCam_Enabled = true
         State.Cam_OrigType = camera.CameraType
         State.Cam_OrigSubject = camera.CameraSubject
         State.Cam_OrigCFrame = camera.CFrame
 
-        -- freeze player
         local char = localPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local root = char and getRoot(char)
@@ -1129,14 +1058,12 @@ local function setFreeCamEnabled(state)
         UserInputService.MouseIconEnabled = false
         State.FreeCam_MouseLocked = true
 
-        -- نوتیف FreeCam موس
         showFreeCamMouseHint()
     else
         State.FreeCam_Enabled = false
         State.FreeCam_MoveDir = Vector3.zero
         State.FreeCam_MouseLocked = false
 
-        -- unfreeze player
         local char = localPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local root = char and getRoot(char)
@@ -1175,6 +1102,7 @@ local function setFreeCamEnabled(state)
 end
 
 UserInputService.InputChanged:Connect(function(input, gp)
+    if State.ZC_Expired then return end
     if gp or not State.FreeCam_Enabled or not FeatureEnabled.freecam then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = input.Delta
@@ -1202,9 +1130,6 @@ RunService.RenderStepped:Connect(function(dt)
     camera.CFrame = cf
 end)
 
----------------------------------------------------------
--- Config Save / Load
----------------------------------------------------------
 local CONFIG_FOLDER = "ZynixRBXC"
 
 local function ensureConfigFolder()
@@ -1292,6 +1217,7 @@ local function applyConfig(cfg)
 end
 
 local function saveConfig()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.setting then return end
     if not writefile or not readfile or not makefolder or not isfolder or not isfile then
         showCenterNotification("File API not supported!", Color3.fromRGB(255,0,0))
@@ -1330,6 +1256,7 @@ local function saveConfig()
 end
 
 local function loadConfig()
+    if State.ZC_Expired then return end
     if not FeatureEnabled.setting then return end
     if not writefile or not readfile or not makefolder or not isfolder or not isfile then
         showCenterNotification("File API not supported!", Color3.fromRGB(255,0,0))
@@ -1371,9 +1298,6 @@ local function loadConfig()
     showCenterNotification("Config loaded successfully!", Color3.fromRGB(0,255,0))
 end
 
----------------------------------------------------------
--- UI ساخت اصلی
----------------------------------------------------------
 local grayBtnColor = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
 local blueBtnColor = Color3.fromRGB(0,110,220)
@@ -1387,7 +1311,6 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Enabled = true
 ScreenGui.Parent = playerGui
 
--- پنجره اصلی
 local mainWindow = Instance.new("Frame")
 mainWindow.Size = MAIN_DEFAULT_SIZE
 mainWindow.Position = MAIN_DEFAULT_POS
@@ -1408,14 +1331,13 @@ mainStroke.Thickness = 1.5
 mainStroke.Color = Color3.fromRGB(255,140,0)
 mainStroke.Parent = mainWindow
 
--- عنوان Zynix RBXC [BETA]
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- بک گراند قهوه‌ای
+title.BackgroundColor3 = Color3.fromRGB(80,50,10)
 title.BackgroundTransparency = 0
-title.Text = "Zynix RBXC [BETA]"
-title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
+title.Text = "Zynix RBXC [v0.1]"
+title.TextColor3 = Color3.fromRGB(255,140,0)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -1424,7 +1346,8 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
 
--- User + Rank (بدون کلمه‌ی User)
+title.TextStrokeTransparency = 1
+
 local nameToShow = CONFIG_NAME or localPlayer.Name
 local rankToShow = CONFIG_RANK or "Member"
 
@@ -1445,7 +1368,7 @@ local rG = math.floor(rankColor.G * 255)
 local rB = math.floor(rankColor.B * 255)
 
 local userLabel = Instance.new("TextLabel")
-userLabel.Position = UDim2.new(0,10,0,50)
+userLabel.Position = UDim2.new(0,10,0,45)
 userLabel.Size = UDim2.new(1,-20,0,20)
 userLabel.BackgroundTransparency = 1
 userLabel.RichText = true
@@ -1461,21 +1384,24 @@ userLabel.Font = Enum.Font.Gotham
 userLabel.TextXAlignment = Enum.TextXAlignment.Left
 userLabel.Parent = mainWindow
 
--- ZC timer label زیر Name - Rank
 local zcLabel = Instance.new("TextLabel")
-zcLabel.Position = UDim2.new(0,10,0,72)
-zcLabel.Size = UDim2.new(1,-20,0,18)
+zcLabel.Position = UDim2.new(0,10,0,70)
+zcLabel.Size = UDim2.new(1,-20,0,20)
 zcLabel.BackgroundTransparency = 1
-zcLabel.Text = "ZC: --:--"
 zcLabel.TextColor3 = Color3.fromRGB(220,220,220)
 zcLabel.TextScaled = true
 zcLabel.Font = Enum.Font.Gotham
 zcLabel.TextXAlignment = Enum.TextXAlignment.Left
+if State.ZC_TotalSeconds > 0 then
+    zcLabel.Text = "ZC: " .. formatTime(State.ZC_RemainingSeconds)
+else
+    zcLabel.Text = "ZC: --:--"
+end
 zcLabel.Parent = mainWindow
-State.ZC_Label = zcLabel
+State.ZC_TimerLabel = zcLabel
 
 local mainScroll = Instance.new("ScrollingFrame")
-mainScroll.Position = UDim2.new(0,10,0,100) -- پایین‌تر به خاطر ZC
+mainScroll.Position = UDim2.new(0,10,0,100)
 mainScroll.Size = UDim2.new(1,-20,1,-110)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
@@ -1487,9 +1413,6 @@ local mainScrollCorner = Instance.new("UICorner")
 mainScrollCorner.CornerRadius = UDim.new(0,8)
 mainScrollCorner.Parent = mainScroll
 
----------------------------------------------------------
--- پنجره‌های تنظیمات
----------------------------------------------------------
 local function createSettingsWindow(name, w, h)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0,w,0,h)
@@ -1522,7 +1445,6 @@ State.Teleport_Window = teleportWindow
 State.FreeCam_Window = freeCamWindow
 State.Settings_Window = settingsWindow
 
--- سیستم جدید استک کردن پنل‌ها با انیمیشن
 local SettingsWindows = {}
 local WindowInfoByFrame = {}
 
@@ -1610,14 +1532,10 @@ local function toggleSettingsWindow(frame)
     end
 end
 
--- وقتی منوی اصلی جابه‌جا می‌شود، پنل‌ها بدون انیمیشن همراهش حرکت کنند
 mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
     layoutSettingsWindows(false)
 end)
 
----------------------------------------------------------
--- Zoom in / Zoom out برای منوی اصلی
----------------------------------------------------------
 function showMainUI()
     if not ScreenGui or not mainWindow then return end
     ScreenGui.Enabled = true
@@ -1651,9 +1569,6 @@ function hideMainUI()
     State.UIHidden = true
 end
 
----------------------------------------------------------
--- Fly Window UI
----------------------------------------------------------
 if FeatureEnabled.fly then
     local flyTitle = Instance.new("TextLabel")
     flyTitle.Position = UDim2.new(0,10,0,10)
@@ -1759,9 +1674,6 @@ if FeatureEnabled.fly then
     end)
 end
 
----------------------------------------------------------
--- FreeCam Window UI
----------------------------------------------------------
 if FeatureEnabled.freecam then
     local freeTitle = Instance.new("TextLabel")
     freeTitle.Position = UDim2.new(0,10,0,10)
@@ -1869,9 +1781,6 @@ if FeatureEnabled.freecam then
     end)
 end
 
----------------------------------------------------------
--- Teleport Window UI
----------------------------------------------------------
 if FeatureEnabled.teleport then
     local tpTitle = Instance.new("TextLabel")
     tpTitle.Position = UDim2.new(0,10,0,10)
@@ -2137,9 +2046,6 @@ if FeatureEnabled.teleport then
     updateWaypointLabel()
 end
 
----------------------------------------------------------
--- ESP Window UI
----------------------------------------------------------
 if FeatureEnabled.esp then
     local espTitle = Instance.new("TextLabel")
     espTitle.Position = UDim2.new(0,10,0,10)
@@ -2260,9 +2166,6 @@ if FeatureEnabled.esp then
     resetESPBtn.MouseButton1Click:Connect(resetESP)
 end
 
----------------------------------------------------------
--- Settings Window UI (Hide key + Config)
----------------------------------------------------------
 if FeatureEnabled.setting then
     local setTitle = Instance.new("TextLabel")
     setTitle.Position = UDim2.new(0,10,0,10)
@@ -2383,9 +2286,6 @@ if FeatureEnabled.setting then
     loadCfgBtn.MouseButton1Click:Connect(loadConfig)
 end
 
----------------------------------------------------------
--- دکمه‌های پنجره اصلی (با انیمیشن Zoom پنل‌ها)
----------------------------------------------------------
 local y = 0
 local function createMainButton(text, color, callback)
     local btn = Instance.new("TextButton")
@@ -2455,9 +2355,180 @@ end
 local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
 State.ComingSoonBtn = comingBtn
 
----------------------------------------------------------
--- پنل آپدیت‌ها (Zoom In / Zoom Out + متن جدید)
----------------------------------------------------------
+local function showTimeOverNotification()
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixTimeOver"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 0, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.TextColor3 = Color3.fromRGB(255,0,0)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Text = "Your time is over!"
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(4)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+local function showTimeAlmostOverNotification()
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixTimeAlmostOver"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 230, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.RichText = true
+    label.TextColor3 = Color3.fromRGB(255,255,0)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Text = 'Your time will end in <font color="rgb(255,0,0)">10</font> seconds!'
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 360, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(3)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+function showZCTimeInfoNotification()
+    if not State.ZC_TotalSeconds or State.ZC_TotalSeconds <= 0 then return end
+
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixZCInfo"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.RichText = true
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+
+    local t = formatTime(State.ZC_TotalSeconds)
+    label.Text = 'After <font color="rgb(0,255,0)">ZC: ' .. t .. '</font> ends, cheat will be disabled.'
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 420, 0, 90), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(4)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
 showUpdatesPanel = function()
     if not ScreenGui then return end
 
@@ -2465,7 +2536,7 @@ showUpdatesPanel = function()
     frame.Name = "ZynixUpdatesPanel"
     frame.AnchorPoint = Vector2.new(0.5,0.5)
     frame.Position = UDim2.new(0.5,0,0.5,0)
-    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچک برای زوم
+    frame.Size = UDim2.new(0, 10, 0, 10)
     frame.BackgroundColor3 = Color3.fromRGB(0,0,0)
     frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
@@ -2506,13 +2577,12 @@ showUpdatesPanel = function()
         '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
         '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
         '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Added zoom in / zoom out animation to the "Press M to unlock your mouse" notification</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Added zoom in / zoom out animation to the \"Press M to unlock your mouse\" notification</font>\n' ..
         '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
         '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
 
     updatesLabel.Parent = frame
 
-    -- Zoom In
     local zoomIn = TweenService:Create(
         frame,
         TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -2521,7 +2591,8 @@ showUpdatesPanel = function()
     zoomIn:Play()
 
     task.spawn(function()
-        task.wait(6) -- 6 ثانیه روی صفحه بماند
+        zoomIn.Completed:Wait()
+        task.wait(6)
         local zoomOut = TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In),
@@ -2530,84 +2601,68 @@ showUpdatesPanel = function()
         zoomOut:Play()
         zoomOut.Completed:Wait()
         frame:Destroy()
+        showZCTimeInfoNotification()
     end)
 end
 
----------------------------------------------------------
--- تابع تایمر ZC (Session Timer)
----------------------------------------------------------
-function startSessionTimer()
-    if SESSION_INITIAL_SECONDS <= 0 then return end
-    if State.SessionExpired then return end
+disableEverythingAndClose = function()
+    State.ZC_Enabled = false
 
-    State.SessionTotalTime = SESSION_INITIAL_SECONDS
-    State.SessionTimeLeft = SESSION_INITIAL_SECONDS
-
-    if State.ZC_Label then
-        local m = math.floor(State.SessionTimeLeft / 60)
-        local s = State.SessionTimeLeft % 60
-        State.ZC_Label.TextColor3 = Color3.fromRGB(220,220,220)
-        State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
+    stopFly()
+    setFreeCamEnabled(false)
+    if FeatureEnabled.esp then
+        setESPEnabled(false)
     end
 
-    task.spawn(function()
-        local warned = false
-        while State.SessionTimeLeft > 0 and not State.SessionExpired do
-            task.wait(1)
-            State.SessionTimeLeft = State.SessionTimeLeft - 1
-
-            if State.ZC_Label then
-                local m = math.floor(State.SessionTimeLeft / 60)
-                local s = State.SessionTimeLeft % 60
-                State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
-            end
-
-            if State.SessionTimeLeft <= 10 and not warned then
-                warned = true
-                if State.ZC_Label then
-                    State.ZC_Label.TextColor3 = Color3.fromRGB(255,0,0)
-                end
-                showZoomNotification(
-                    'You have <font color="rgb(255,0,0)">10</font> seconds left!',
-                    Color3.fromRGB(255,255,0),
-                    Color3.fromRGB(255,255,0),
-                    3
-                )
-            end
-        end
-
-        if State.SessionExpired then return end
-        State.SessionExpired = true
-
-        -- بستن همه پنل‌های باز با Zoom Out
-        for _, info in ipairs(SettingsWindows) do
-            if info.open then
-                toggleSettingsWindow(info.frame)
-            end
-        end
-
-        -- خاموش کردن همه‌چیز
-        if FeatureEnabled.freecam then setFreeCamEnabled(false) end
-        if FeatureEnabled.fly then stopFly() end
-        if FeatureEnabled.esp then setESPEnabled(false) end
-
+    if ScreenGui then
         hideMainUI()
+    end
 
-        -- نوتیف اتمام زمان
-        showZoomNotification(
-            "Your time is up!",
-            Color3.fromRGB(255,0,0),
-            Color3.fromRGB(255,0,0),
-            4
-        )
+    for _, info in ipairs(SettingsWindows) do
+        if info.open then
+            toggleSettingsWindow(info.frame)
+        end
+    end
+end
+
+startZCTimer = function()
+    if not State.ZC_Enabled or State.ZC_Expired or State.ZC_TotalSeconds <= 0 then return end
+    if State.ZC_TimerRunning then return end
+    State.ZC_TimerRunning = true
+
+    task.spawn(function()
+        while State.ZC_Enabled and not State.ZC_Expired and State.ZC_RemainingSeconds > 0 do
+            if State.ZC_TimerLabel then
+                State.ZC_TimerLabel.Text = "ZC: " .. formatTime(State.ZC_RemainingSeconds)
+            end
+
+            if State.ZC_RemainingSeconds <= 10 and not State.ZC_WarningShown then
+                State.ZC_WarningShown = true
+                if State.ZC_TimerLabel then
+                    State.ZC_TimerLabel.TextColor3 = Color3.fromRGB(255,0,0)
+                end
+                showTimeAlmostOverNotification()
+            end
+
+            task.wait(1)
+            State.ZC_RemainingSeconds = State.ZC_RemainingSeconds - 1
+        end
+
+        if not State.ZC_Expired and State.ZC_RemainingSeconds <= 0 then
+            State.ZC_RemainingSeconds = 0
+            if State.ZC_TimerLabel then
+                State.ZC_TimerLabel.Text = "ZC: 00:00"
+                State.ZC_TimerLabel.TextColor3 = Color3.fromRGB(255,0,0)
+            end
+            State.ZC_Expired = true
+            disableEverythingAndClose()
+            showTimeOverNotification()
+        end
     end)
 end
 
----------------------------------------------------------
--- Global Input (hotkeys + FreeCam move + Hide key + FreeCam M toggle)
----------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
-    if State.SessionExpired then return end
+    if State.ZC_Expired then return end
     if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
@@ -2641,7 +2696,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Hide UI با Zoom in/Zoom out
     if State.Hide_HotKey and key == State.Hide_HotKey then
         if ScreenGui then
             if not ScreenGui.Enabled or State.UIHidden then
@@ -2653,7 +2707,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Hotkeys (Fly / FreeCam)
     if FeatureEnabled.fly and State.Fly_HotKey and key == State.Fly_HotKey then
         toggleFly()
         return
@@ -2664,7 +2717,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- هنگام فعال بودن FreeCam: M برای لاک/آنلاک موس
     if FeatureEnabled.freecam and State.FreeCam_Enabled and key == Enum.KeyCode.M then
         if State.FreeCam_MouseLocked then
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -2678,7 +2730,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- حرکت FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled then
         if key == Enum.KeyCode.W then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
@@ -2697,7 +2748,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 UserInputService.InputEnded:Connect(function(input, gp)
-    if State.SessionExpired then return end
+    if State.ZC_Expired then return end
     if gp or not State.FreeCam_Enabled or not FeatureEnabled.freecam then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
