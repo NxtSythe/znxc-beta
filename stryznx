@@ -1,17 +1,34 @@
-local PIN_TAG = "szynixloader.b1uu1x1ld1"
-local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
-local CORRECT_PIN = PIN_RAW:gsub("%D","")
+-- ShiningRBXC - Single Script (NoClip removed / FreeCam mouse hint / Updates panel + Zoom animations)
 
-local NAME_TAG = "szynixesm.Guest"
+--//////////////////////////////////////////////////////
+--//////////////  OBFUSCATED SETTINGS  /////////////////
+--//////////////////////////////////////////////////////
+
+-- Example password: sythe3253
+-- Encoded as: "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
+local PIN_TAG = "szynixloader.s.mk.y.mk.t.mk.h.mk.e.mk.3.mk.2.mk.5.mk.3"
+local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
+
+local CORRECT_PIN = ""
+do
+    -- Convert ".mk." into commas, then join parts
+    local replaced = PIN_RAW:gsub("%.mk%.", ",")
+    for seg in replaced:gmatch("([^,]+)") do
+        CORRECT_PIN = CORRECT_PIN .. seg
+    end
+end
+
+local NAME_TAG = "szynixesm.Sythe"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
-local RANK_TAG = "szynixnghsh.Member"
+local RANK_TAG = "szynixnghsh.Owner"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.1"
+local TIME_TAG = "szynixzmn.10000"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
+-- esp, freecam, fly, teleport, setting
 local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
@@ -121,6 +138,14 @@ local State = {
     ZC_WarningShown = false,
     ZC_TimerLabel = nil,
     ZC_TimerRunning = false,
+
+    -- Console
+    Console_Window = nil,
+    ConsoleInputBox = nil,
+    Console_Enabled = false,
+    Console_HotKey = Enum.KeyCode.F6,
+    Console_HotKeyName = "F6",
+    WaitingForConsoleHotKey = false,
 }
 
 local showUpdatesPanel
@@ -181,6 +206,32 @@ local function formatTime(sec)
     return string.format("%02d:%02d", m, s)
 end
 
+-- SC label updater (SC: Aqua, time white; last 10s time red)
+local function refreshSCTimerLabel()
+    if not State.ZC_TimerLabel then return end
+
+    local label = State.ZC_TimerLabel
+    label.RichText = true
+
+    if not State.ZC_TotalSeconds or State.ZC_TotalSeconds <= 0 then
+        label.Text = '<font color="rgb(0,255,255)">SC:</font> <font color="rgb(255,255,255)">--:--</font>'
+        return
+    end
+
+    local t = math.max(0, math.floor(State.ZC_RemainingSeconds or 0))
+    local timeStr = formatTime(t)
+    local timeColor = "255,255,255"
+    if t <= 10 then
+        timeColor = "255,0,0"
+    end
+
+    label.Text = string.format(
+        '<font color="rgb(0,255,255)">SC:</font> <font color="rgb(%s)">%s</font>',
+        timeColor,
+        timeStr
+    )
+end
+
 local function createLoadingGui()
     local loadingGui = Instance.new("ScreenGui")
     loadingGui.Name = "ZynixLoading"
@@ -213,7 +264,7 @@ local function createLoadingGui()
     title.TextScaled = true
     title.TextColor3 = Color3.fromRGB(255,255,255)
     title.TextXAlignment = Enum.TextXAlignment.Center
-    title.Text = "Zynix RBXC [v0.1]"
+    title.Text = "ShiningRBXC"
     title.Parent = frame
 
     local pinLabel = Instance.new("TextLabel")
@@ -224,7 +275,7 @@ local function createLoadingGui()
     pinLabel.TextScaled = true
     pinLabel.TextColor3 = Color3.fromRGB(255,255,255)
     pinLabel.TextXAlignment = Enum.TextXAlignment.Left
-    pinLabel.Text = "Enter PIN:"
+    pinLabel.Text = "Enter password:"
     pinLabel.Parent = frame
 
     local pinBox = Instance.new("TextBox")
@@ -232,7 +283,7 @@ local function createLoadingGui()
     pinBox.Position = UDim2.new(0,10,0,70)
     pinBox.BackgroundColor3 = Color3.fromRGB(30,30,30)
     pinBox.Text = ""
-    pinBox.PlaceholderText = "PIN"
+    pinBox.PlaceholderText = "Password"
     pinBox.Font = Enum.Font.Gotham
     pinBox.TextScaled = true
     pinBox.TextColor3 = Color3.fromRGB(255,255,255)
@@ -297,8 +348,8 @@ local function createLoadingGui()
     end
 
     local function handleSuccess()
-        status.TextColor3 = Color3.fromRGB(255,255,255)
-        status.Text = "Successful!"
+        status.TextColor3 = Color3.fromRGB(44,187,21)
+        status.Text = "logged in as Sythe"
         pinBox.Visible = false
         pinLabel.Visible = false
         confirmBtn.Visible = false
@@ -351,7 +402,7 @@ local function createLoadingGui()
             handleSuccess()
         else
             status.TextColor3 = Color3.fromRGB(255,255,255)
-            status.Text = "PIN is wrong!"
+            status.Text = "Password is wrong!"
             pinBox.Text = ""
         end
     end
@@ -492,6 +543,7 @@ local function showCenterNotification(text, color)
     label.Text = text
     label.Parent = frame
 
+    -- simple fade without zoom for generic notifications
     task.spawn(function()
         task.wait(2.5)
         local tweenOut = TweenService:Create(
@@ -501,6 +553,64 @@ local function showCenterNotification(text, color)
         )
         tweenOut:Play()
         tweenOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+-- Time-added notification (zoom in/out, black 70%, green stroke)
+local function showTimeAddedNotification(addSeconds)
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixTimeAddedNotification"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(0, 255, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.TextWrapped = true
+    label.Text = tostring(addSeconds) .. " seconds have been added to your time!"
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 360, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(3)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
         notifGui:Destroy()
     end)
 end
@@ -1158,6 +1268,7 @@ local function buildConfig()
         Fly_HotKey = State.Fly_HotKeyName,
         FreeCam_HotKey = State.FreeCam_HotKeyName,
         Hide_HotKey = State.Hide_HotKeyName,
+        Console_HotKey = State.Console_HotKeyName,
 
         ESP_ColorIndex = colorIndex or 1,
         ESP_Rainbow = State.ESP_Rainbow,
@@ -1205,6 +1316,15 @@ local function applyConfig(cfg)
         State.Hide_HotKeyName = cfg.Hide_HotKey
         if State.HideHotkeyBtn then
             State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
+        end
+    end
+
+    if cfg.Console_HotKey then
+        local kc = keycodeFromName(cfg.Console_HotKey)
+        State.Console_HotKey = kc
+        State.Console_HotKeyName = cfg.Console_HotKey
+        if State.ConsoleHotkeyBtn then
+            State.ConsoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
         end
     end
 
@@ -1328,16 +1448,16 @@ mainCorner.Parent = mainWindow
 
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Thickness = 1.5
-mainStroke.Color = Color3.fromRGB(255,140,0)
+mainStroke.Color = Color3.fromRGB(255,255,255) -- white stroke instead of orange
 mainStroke.Parent = mainWindow
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(80,50,10)
+title.BackgroundColor3 = Color3.fromRGB(0,255,255) -- Aqua background
 title.BackgroundTransparency = 0
-title.Text = "Zynix RBXC [v0.1]"
-title.TextColor3 = Color3.fromRGB(255,140,0)
+title.Text = "ShiningRBXC"
+title.TextColor3 = Color3.fromRGB(0,0,0)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = mainWindow
@@ -1392,13 +1512,10 @@ zcLabel.TextColor3 = Color3.fromRGB(220,220,220)
 zcLabel.TextScaled = true
 zcLabel.Font = Enum.Font.Gotham
 zcLabel.TextXAlignment = Enum.TextXAlignment.Left
-if State.ZC_TotalSeconds > 0 then
-    zcLabel.Text = "ZC: " .. formatTime(State.ZC_RemainingSeconds)
-else
-    zcLabel.Text = "ZC: --:--"
-end
+zcLabel.RichText = true
 zcLabel.Parent = mainWindow
 State.ZC_TimerLabel = zcLabel
+refreshSCTimerLabel()
 
 local mainScroll = Instance.new("ScrollingFrame")
 mainScroll.Position = UDim2.new(0,10,0,100)
@@ -1437,7 +1554,7 @@ local flyWindow      = createSettingsWindow("FlyWindow", 230, 200)
 local espWindow      = createSettingsWindow("ESPWindow", 230, 240)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow  = createSettingsWindow("FreeCamWindow", 230, 200)
-local settingsWindow = createSettingsWindow("SettingsWindow", 230, 200)
+local settingsWindow = createSettingsWindow("SettingsWindow", 230, 230)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
@@ -1567,6 +1684,120 @@ function hideMainUI()
         mainWindow.Size = MAIN_DEFAULT_SIZE
     end)
     State.UIHidden = true
+end
+
+-- Console window (black, 70% opacity, green stroke, white text, draggable, F6 default)
+local function createConsoleWindow()
+    local consoleGuiFrame = Instance.new("Frame")
+    consoleGuiFrame.Name = "ShiningConsole"
+    consoleGuiFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    consoleGuiFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    consoleGuiFrame.Size = UDim2.new(0, 10, 0, 10)
+    consoleGuiFrame.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    consoleGuiFrame.BackgroundTransparency = 1
+    consoleGuiFrame.Active = true
+    consoleGuiFrame.Draggable = true
+    consoleGuiFrame.Visible = false
+    consoleGuiFrame.Parent = ScreenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,10)
+    corner.Parent = consoleGuiFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(0,255,0)
+    stroke.Parent = consoleGuiFrame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Size = UDim2.new(1,-20,0,30)
+    titleLabel.Position = UDim2.new(0,10,0,10)
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextScaled = true
+    titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Text = "Console"
+    titleLabel.Parent = consoleGuiFrame
+
+    local input = Instance.new("TextBox")
+    input.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    input.BackgroundTransparency = 0
+    input.Size = UDim2.new(1,-20,0,30)
+    input.Position = UDim2.new(0,10,0,50)
+    input.Font = Enum.Font.Gotham
+    input.TextScaled = true
+    input.TextColor3 = Color3.fromRGB(255,255,255)
+    input.PlaceholderText = "Type command and press Enter"
+    input.Text = ""
+    input.ClearTextOnFocus = false
+    input.Parent = consoleGuiFrame
+
+    local icorner = Instance.new("UICorner")
+    icorner.CornerRadius = UDim.new(0,8)
+    icorner.Parent = input
+
+    State.Console_Window = consoleGuiFrame
+    State.ConsoleInputBox = input
+end
+
+createConsoleWindow()
+
+local function processConsoleCommand(cmd)
+    cmd = tostring(cmd or ""):lower()
+    local timeStr = cmd:match("szynixtime%.set%.(%d+)%.code35")
+    if timeStr then
+        local addSec = tonumber(timeStr)
+        if addSec and addSec > 0 then
+            -- Add time (seconds) to timer
+            State.ZC_RemainingSeconds = (State.ZC_RemainingSeconds or 0) + addSec
+            State.ZC_TotalSeconds = (State.ZC_TotalSeconds or 0) + addSec
+            State.ZC_Enabled = true
+            State.ZC_Expired = false
+            refreshSCTimerLabel()
+            showTimeAddedNotification(addSec)
+        end
+    end
+end
+
+if State.ConsoleInputBox then
+    State.ConsoleInputBox.FocusLost:Connect(function(enter)
+        if enter then
+            local text = State.ConsoleInputBox.Text
+            processConsoleCommand(text)
+            State.ConsoleInputBox.Text = ""
+        end
+    end)
+end
+
+local function toggleConsole()
+    if not State.Console_Window then return end
+    local frame = State.Console_Window
+
+    if not State.Console_Enabled then
+        State.Console_Enabled = true
+        frame.Visible = true
+        frame.Size = UDim2.new(0,10,0,10)
+        frame.BackgroundTransparency = 1
+
+        local zoomIn = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Size = UDim2.new(0, 420, 0, 130), BackgroundTransparency = 0.3 }
+        )
+        zoomIn:Play()
+    else
+        State.Console_Enabled = false
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0,10,0,10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Connect(function()
+            frame.Visible = false
+        end)
+    end
 end
 
 if FeatureEnabled.fly then
@@ -2183,7 +2414,7 @@ if FeatureEnabled.setting then
     setScroll.BackgroundTransparency = 1
     setScroll.BorderSizePixel = 0
     setScroll.ScrollBarThickness = 4
-    setScroll.CanvasSize = UDim2.new(0,0,0,180)
+    setScroll.CanvasSize = UDim2.new(0,0,0,230)
     setScroll.Parent = settingsWindow
 
     local setScrollCorner = Instance.new("UICorner")
@@ -2284,10 +2515,44 @@ if FeatureEnabled.setting then
     loadCfgCorner.Parent = loadCfgBtn
 
     loadCfgBtn.MouseButton1Click:Connect(loadConfig)
+
+    -- Console hotkey setting
+    local consoleLabel = Instance.new("TextLabel")
+    consoleLabel.Position = UDim2.new(0,0,0,160)
+    consoleLabel.Size = UDim2.new(0.5,0,0,30)
+    consoleLabel.BackgroundTransparency = 1
+    consoleLabel.Text = "Console:"
+    consoleLabel.Font = Enum.Font.Gotham
+    consoleLabel.TextScaled = true
+    consoleLabel.TextColor3 = Color3.fromRGB(230,230,230)
+    consoleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    consoleLabel.Parent = setScroll
+
+    local consoleHotkeyBtn = Instance.new("TextButton")
+    consoleHotkeyBtn.Position = UDim2.new(0.5,0,0,160)
+    consoleHotkeyBtn.Size = UDim2.new(0.5,0,0,30)
+    consoleHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    consoleHotkeyBtn.Font = Enum.Font.GothamSemibold
+    consoleHotkeyBtn.TextScaled = true
+    consoleHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    consoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
+    consoleHotkeyBtn.Parent = setScroll
+    addHoverEffect(consoleHotkeyBtn, consoleHotkeyBtn.BackgroundColor3)
+
+    local consoleHotkeyCorner = Instance.new("UICorner")
+    consoleHotkeyCorner.CornerRadius = UDim.new(0,8)
+    consoleHotkeyCorner.Parent = consoleHotkeyBtn
+
+    State.ConsoleHotkeyBtn = consoleHotkeyBtn
+
+    consoleHotkeyBtn.MouseButton1Click:Connect(function()
+        State.WaitingForConsoleHotKey = true
+        consoleHotkeyBtn.Text = "Console: [Press Key]"
+    end)
 end
 
 local y = 0
-local function createMainButton(text, color, callback)
+local function createMainButton(text, color, callback, isSettings)
     local btn = Instance.new("TextButton")
     btn.Position = UDim2.new(0,0,0,y)
     btn.Size = UDim2.new(1,0,0,40)
@@ -2296,12 +2561,47 @@ local function createMainButton(text, color, callback)
     btn.TextColor3 = Color3.fromRGB(255,255,255)
     btn.Text = text
     btn.Parent = mainScroll
-    addHoverEffect(btn, color)
-    btn.BackgroundColor3 = color
+
+    -- Settings button: black bg, white text, white stroke
+    if isSettings then
+        color = Color3.fromRGB(0,0,0)
+        btn.BackgroundColor3 = color
+        btn.AutoButtonColor = false
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 1.5
+        stroke.Color = Color3.fromRGB(255,255,255)
+        stroke.Parent = btn
+    else
+        addHoverEffect(btn, color)
+        btn.BackgroundColor3 = color
+    end
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0,8)
     c.Parent = btn
+
+    -- Zoom in/out on hover for main options
+    local baseSize = btn.Size
+    local basePos = btn.Position
+
+    btn.MouseEnter:Connect(function()
+        local biggerSize = UDim2.new(baseSize.X.Scale, baseSize.X.Offset, baseSize.Y.Scale, baseSize.Y.Offset + 4)
+        local newPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset - 2)
+        TweenService:Create(
+            btn,
+            TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+            { Size = biggerSize, Position = newPos }
+        ):Play()
+    end)
+
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(
+            btn,
+            TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+            { Size = baseSize, Position = basePos }
+        ):Play()
+    end)
 
     y = y + 50
 
@@ -2317,7 +2617,7 @@ if FeatureEnabled.fly then
         if State.Fly_Window then
             toggleSettingsWindow(State.Fly_Window)
         end
-    end)
+    end, false)
 end
 
 if FeatureEnabled.teleport then
@@ -2325,7 +2625,7 @@ if FeatureEnabled.teleport then
         if State.Teleport_Window then
             toggleSettingsWindow(State.Teleport_Window)
         end
-    end)
+    end, false)
 end
 
 if FeatureEnabled.esp then
@@ -2333,7 +2633,7 @@ if FeatureEnabled.esp then
         if State.ESP_Window then
             toggleSettingsWindow(State.ESP_Window)
         end
-    end)
+    end, false)
 end
 
 if FeatureEnabled.freecam then
@@ -2341,18 +2641,19 @@ if FeatureEnabled.freecam then
         if State.FreeCam_Window then
             toggleSettingsWindow(State.FreeCam_Window)
         end
-    end)
+    end, false)
 end
 
+local settingsBtn
 if FeatureEnabled.setting then
-    createMainButton("Settings", blueBtnColor, function()
+    settingsBtn = createMainButton("Settings", Color3.fromRGB(0,0,0), function()
         if State.Settings_Window then
             toggleSettingsWindow(State.Settings_Window)
         end
-    end)
+    end, true)
 end
 
-local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil)
+local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil, false)
 State.ComingSoonBtn = comingBtn
 
 local function showTimeOverNotification()
@@ -2411,6 +2712,7 @@ local function showTimeOverNotification()
     end)
 end
 
+-- 10-second warning notification: black bg (70% opacity), white stroke, white text, zoom anim, 3s
 local function showTimeAlmostOverNotification()
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixTimeAlmostOver"
@@ -2432,7 +2734,7 @@ local function showTimeAlmostOverNotification()
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 230, 0)
+    stroke.Color = Color3.fromRGB(255, 255, 255)
     stroke.Parent = frame
 
     local label = Instance.new("TextLabel")
@@ -2441,10 +2743,9 @@ local function showTimeAlmostOverNotification()
     label.Position = UDim2.new(0,10,0,10)
     label.Font = Enum.Font.GothamBold
     label.TextScaled = true
-    label.RichText = true
-    label.TextColor3 = Color3.fromRGB(255,255,0)
+    label.TextColor3 = Color3.fromRGB(255,255,255)
     label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Text = 'Your time will end in <font color="rgb(255,0,0)">10</font> seconds!'
+    label.Text = "Your time will end in 10 seconds!"
     label.Parent = frame
 
     local zoomIn = TweenService:Create(
@@ -2505,7 +2806,7 @@ function showZCTimeInfoNotification()
     label.TextXAlignment = Enum.TextXAlignment.Center
 
     local t = formatTime(State.ZC_TotalSeconds)
-    label.Text = 'After <font color="rgb(0,255,0)">ZC: ' .. t .. '</font> ends, cheat will be disabled.'
+    label.Text = 'After <font color="rgb(0,255,255)">SC: ' .. t .. '</font> ends, cheat will be disabled.'
     label.Parent = frame
 
     local zoomIn = TweenService:Create(
@@ -2632,15 +2933,10 @@ startZCTimer = function()
 
     task.spawn(function()
         while State.ZC_Enabled and not State.ZC_Expired and State.ZC_RemainingSeconds > 0 do
-            if State.ZC_TimerLabel then
-                State.ZC_TimerLabel.Text = "ZC: " .. formatTime(State.ZC_RemainingSeconds)
-            end
+            refreshSCTimerLabel()
 
             if State.ZC_RemainingSeconds <= 10 and not State.ZC_WarningShown then
                 State.ZC_WarningShown = true
-                if State.ZC_TimerLabel then
-                    State.ZC_TimerLabel.TextColor3 = Color3.fromRGB(255,0,0)
-                end
                 showTimeAlmostOverNotification()
             end
 
@@ -2650,10 +2946,7 @@ startZCTimer = function()
 
         if not State.ZC_Expired and State.ZC_RemainingSeconds <= 0 then
             State.ZC_RemainingSeconds = 0
-            if State.ZC_TimerLabel then
-                State.ZC_TimerLabel.Text = "ZC: 00:00"
-                State.ZC_TimerLabel.TextColor3 = Color3.fromRGB(255,0,0)
-            end
+            refreshSCTimerLabel()
             State.ZC_Expired = true
             disableEverythingAndClose()
             showTimeOverNotification()
@@ -2693,6 +2986,22 @@ UserInputService.InputBegan:Connect(function(input, gp)
         if State.FreeCamHotkeyBtn then
             State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
         end
+        return
+    end
+
+    if State.WaitingForConsoleHotKey then
+        State.WaitingForConsoleHotKey = false
+        State.Console_HotKey = key
+        State.Console_HotKeyName = key.Name or "Key"
+        if State.ConsoleHotkeyBtn then
+            State.ConsoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
+        end
+        return
+    end
+
+    -- Console toggle
+    if State.Console_HotKey and key == State.Console_HotKey then
+        toggleConsole()
         return
     end
 
