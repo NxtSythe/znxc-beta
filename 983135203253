@@ -297,7 +297,7 @@ local function createLoadingGui()
     end
 
     local function handleSuccess()
-        status.rainbow = true
+        status.TextColor3 = Color3.fromRGB(44,187,21)
         status.Text = "logged in as Sythe"
         pinBox.Visible = false
         pinLabel.Visible = false
