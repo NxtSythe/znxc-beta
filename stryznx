@@ -139,13 +139,6 @@ local State = {
     ZC_WarningShown = false,
     ZC_TimerLabel = nil,
     ZC_TimerRunning = false,
-
-    -- Admin color panel
-    PanelColorIndex = 1,
-    PanelColorBtn = nil,
-
-    -- Main window size (for resize)
-    MainWindowSize = nil,
 }
 
 local showUpdatesPanel
@@ -556,7 +549,7 @@ local function showCenterNotification(text, color)
     end)
 end
 
--- Time-added notification (zoom in/out, black 70%, green stroke)
+-- Time-added notification kept only as visual function (not used anymore after removing time command)
 local function showTimeAddedNotification(addSeconds)
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixTimeAddedNotification"
@@ -1413,7 +1406,6 @@ local blueBtnColor = Color3.fromRGB(0,110,220)
 
 local MAIN_DEFAULT_SIZE = UDim2.new(0, 220, 0, 310)
 local MAIN_DEFAULT_POS = UDim2.new(0, 20, 1, -330)
-local MIN_MAIN_WIDTH, MIN_MAIN_HEIGHT = 220, 220
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
@@ -1437,16 +1429,14 @@ mainCorner.CornerRadius = UDim.new(0,10)
 mainCorner.Parent = mainWindow
 
 local mainStroke = Instance.new("UIStroke")
-local DEFAULT_STROKE_COLOR = Color3.fromRGB(255,255,255)
 mainStroke.Thickness = 1.5
-mainStroke.Color = DEFAULT_STROKE_COLOR -- white stroke
+mainStroke.Color = Color3.fromRGB(255,255,255) -- default white
 mainStroke.Parent = mainWindow
 
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-local DEFAULT_TITLE_COLOR = Color3.fromRGB(0,255,255)
-title.BackgroundColor3 = DEFAULT_TITLE_COLOR -- Aqua background
+title.BackgroundColor3 = Color3.fromRGB(0,255,255) -- Aqua background (DEFAULT)
 title.BackgroundTransparency = 0
 title.Text = "ShiningRBXC"
 title.TextColor3 = Color3.fromRGB(0,0,0)
@@ -1460,7 +1450,40 @@ titleCorner.Parent = title
 
 title.TextStrokeTransparency = 1
 
-State.MainWindowSize = MAIN_DEFAULT_SIZE
+-- MAIN PANEL RESIZE HANDLE (bottom-right corner)
+local resizeHandle = Instance.new("Frame")
+resizeHandle.Size = UDim2.new(0, 16, 0, 16)
+resizeHandle.AnchorPoint = Vector2.new(1,1)
+resizeHandle.Position = UDim2.new(1, 0, 1, 0)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Parent = mainWindow
+
+local isResizing = false
+local resizeStartMousePos
+local resizeStartSize
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isResizing = true
+        resizeStartMousePos = input.Position
+        resizeStartSize = mainWindow.Size
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                isResizing = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isResizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - resizeStartMousePos
+        local newWidth = math.clamp(resizeStartSize.X.Offset + delta.X, 180, 600)
+        local newHeight = math.clamp(resizeStartSize.Y.Offset + delta.Y, 200, 600)
+        mainWindow.Size = UDim2.new(resizeStartSize.X.Scale, newWidth, resizeStartSize.Y.Scale, newHeight)
+    end
+end)
 
 local nameToShow = CONFIG_NAME or localPlayer.Name
 local rankToShow = CONFIG_RANK or "Member"
@@ -1549,7 +1572,7 @@ local espWindow      = createSettingsWindow("ESPWindow", 230, 240)
 local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
 local freeCamWindow  = createSettingsWindow("FreeCamWindow", 230, 200)
 local settingsWindow = createSettingsWindow("SettingsWindow", 230, 230)
-local adminWindow    = createSettingsWindow("AdminWindow", 230, 160)
+local adminWindow    = createSettingsWindow("AdminWindow", 230, 150)
 
 State.Fly_Window = flyWindow
 State.ESP_Window = espWindow
@@ -1650,87 +1673,6 @@ mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
     layoutSettingsWindows(false)
 end)
 
-mainWindow:GetPropertyChangedSignal("Size"):Connect(function()
-    layoutSettingsWindows(false)
-end)
-
---/////////// ADMIN PANEL COLOR CONTROL ///////////
-local panelColors = {
-    { name = "Default", color = nil },
-    { name = "Red",     color = Color3.fromRGB(255,0,0) },
-    { name = "Orange",  color = Color3.fromRGB(255,165,0) },
-    { name = "Yellow",  color = Color3.fromRGB(255,255,0) },
-    { name = "Blue",    color = Color3.fromRGB(0,120,255) },
-    { name = "Green",   color = Color3.fromRGB(0,255,0) },
-    { name = "Purple",  color = Color3.fromRGB(180,0,255) },
-}
-
-local function applyPanelColor()
-    local idx = State.PanelColorIndex or 1
-    if idx < 1 or idx > #panelColors then idx = 1 end
-    local opt = panelColors[idx]
-
-    if not opt.color then
-        mainStroke.Color = DEFAULT_STROKE_COLOR
-        title.BackgroundColor3 = DEFAULT_TITLE_COLOR
-    else
-        mainStroke.Color = opt.color
-        title.BackgroundColor3 = opt.color
-    end
-
-    if State.PanelColorBtn then
-        State.PanelColorBtn.Text = "Color: " .. string.upper(opt.name)
-    end
-end
-
---//////////// MAIN WINDOW RESIZE (BOTTOM-RIGHT CORNER) ////////////
-local resizeHandle = Instance.new("Frame")
-resizeHandle.Size = UDim2.new(0, 16, 0, 16)
-resizeHandle.AnchorPoint = Vector2.new(1, 1)
-resizeHandle.Position = UDim2.new(1, 0, 1, 0)
-resizeHandle.BackgroundColor3 = Color3.fromRGB(60,60,70)
-resizeHandle.BackgroundTransparency = 0
-resizeHandle.BorderSizePixel = 0
-resizeHandle.Parent = mainWindow
-
-local resizeCorner = Instance.new("UICorner")
-resizeCorner.CornerRadius = UDim.new(0,4)
-resizeCorner.Parent = resizeHandle
-
-local resizing = false
-local resizeStartPos
-local resizeStartSize
-
-resizeHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        resizing = true
-        resizeStartPos = UserInputService:GetMouseLocation()
-        resizeStartSize = mainWindow.Size
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                resizing = false
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if not resizing then return end
-    if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-
-    local current = UserInputService:GetMouseLocation()
-    local dx = current.X - resizeStartPos.X
-    local dy = current.Y - resizeStartPos.Y
-
-    local newWidth  = math.max(MIN_MAIN_WIDTH,  resizeStartSize.X.Offset + dx)
-    local newHeight = math.max(MIN_MAIN_HEIGHT, resizeStartSize.Y.Offset + dy)
-
-    local newSize = UDim2.new(0, newWidth, 0, newHeight)
-    mainWindow.Size = newSize
-    State.MainWindowSize = newSize
-    layoutSettingsWindows(false)
-end)
-
 function showMainUI()
     if not ScreenGui or not mainWindow then return end
     ScreenGui.Enabled = true
@@ -1738,12 +1680,10 @@ function showMainUI()
     mainWindow.Size = UDim2.new(0, 10, 0, 10)
     mainWindow.Position = MAIN_DEFAULT_POS
 
-    local targetSize = State.MainWindowSize or MAIN_DEFAULT_SIZE
-
     local tweenIn = TweenService:Create(
         mainWindow,
         TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = targetSize }
+        { Size = MAIN_DEFAULT_SIZE }
     )
     tweenIn:Play()
     State.UIHidden = false
@@ -1760,18 +1700,39 @@ function hideMainUI()
     tweenOut.Completed:Connect(function()
         if not ScreenGui then return end
         mainWindow.Visible = false
-        -- Close all settings windows and reset open flags
+        mainWindow.Size = MAIN_DEFAULT_SIZE
+        -- پنل‌های جانبی هم بسته شوند و open=false شود
         for _, info in ipairs(SettingsWindows) do
             if info.frame then
                 info.frame.Visible = false
-                info.open = false
             end
+            info.open = false
         end
     end)
     State.UIHidden = true
 end
 
---//////////// ADMIN PANEL UI ////////////
+-- ADMIN PANEL: پنلی برای تغییر رنگ ShiningRBXC و استروک پنل اصلی
+local PanelThemes = {
+    { name = "DEFAULT", color = Color3.fromRGB(0,255,255), stroke = Color3.fromRGB(255,255,255) },
+    { name = "RED",     color = Color3.fromRGB(255,0,0),   stroke = Color3.fromRGB(255,0,0)   },
+    { name = "ORANGE",  color = Color3.fromRGB(255,127,0), stroke = Color3.fromRGB(255,127,0) },
+    { name = "YELLOW",  color = Color3.fromRGB(255,255,0), stroke = Color3.fromRGB(255,255,0) },
+    { name = "BLUE",    color = Color3.fromRGB(0,128,255), stroke = Color3.fromRGB(0,128,255) },
+    { name = "GREEN",   color = Color3.fromRGB(0,200,0),   stroke = Color3.fromRGB(0,200,0)   },
+    { name = "PURPLE",  color = Color3.fromRGB(160,32,240),stroke = Color3.fromRGB(160,32,240)},
+}
+local PanelThemeIndex = 1
+
+local function applyPanelTheme()
+    local theme = PanelThemes[PanelThemeIndex]
+    if not theme then return end
+    title.BackgroundColor3 = theme.color
+    mainStroke.Color = theme.stroke
+end
+
+applyPanelTheme()
+
 do
     local adminTitle = Instance.new("TextLabel")
     adminTitle.Position = UDim2.new(0,10,0,10)
@@ -1798,12 +1759,12 @@ do
 
     local colorBtn = Instance.new("TextButton")
     colorBtn.Position = UDim2.new(0,0,0,0)
-    colorBtn.Size = UDim2.new(1,0,0,35)
+    colorBtn.Size = UDim2.new(1,0,0,40)
     colorBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
     colorBtn.Font = Enum.Font.GothamSemibold
     colorBtn.TextScaled = true
     colorBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    colorBtn.Text = "Color: DEFAULT"
+    colorBtn.Text = "Color: " .. PanelThemes[PanelThemeIndex].name
     colorBtn.Parent = adminScroll
     addHoverEffect(colorBtn, colorBtn.BackgroundColor3)
 
@@ -1811,23 +1772,18 @@ do
     colorCorner.CornerRadius = UDim.new(0,8)
     colorCorner.Parent = colorBtn
 
-    State.PanelColorBtn = colorBtn
-    State.PanelColorIndex = 1
-    applyPanelColor()
-
     colorBtn.MouseButton1Click:Connect(function()
-        State.PanelColorIndex = State.PanelColorIndex + 1
-        if State.PanelColorIndex > #panelColors then
-            State.PanelColorIndex = 1
+        PanelThemeIndex = PanelThemeIndex + 1
+        if PanelThemeIndex > #PanelThemes then
+            PanelThemeIndex = 1
         end
-        applyPanelColor()
+        colorBtn.Text = "Color: " .. PanelThemes[PanelThemeIndex].name
+        applyPanelTheme()
     end)
 end
 
---//////////// SETTINGS WINDOWS CREATED ABOVE ////////////
+-- (Console window & command COMPLETELY REMOVED)
 
--- (Fly, FreeCam, Teleport, ESP, Settings creation remains the same as before)
--- FLY WINDOW
 if FeatureEnabled.fly then
     local flyTitle = Instance.new("TextLabel")
     flyTitle.Position = UDim2.new(0,10,0,10)
@@ -1933,7 +1889,6 @@ if FeatureEnabled.fly then
     end)
 end
 
--- FREECAM WINDOW
 if FeatureEnabled.freecam then
     local freeTitle = Instance.new("TextLabel")
     freeTitle.Position = UDim2.new(0,10,0,10)
@@ -2255,11 +2210,12 @@ if FeatureEnabled.teleport then
     wpDelCorner.CornerRadius = UDim.new(0,6)
     wpDelCorner.Parent = wpDelBtn
 
+    -- Clear all waypoints
     local wpClearBtn = Instance.new("TextButton")
     wpClearBtn.Position = UDim2.new(0,0,0,225)
-    wpClearBtn.Size = UDim2.new(1,0,0,30)
+    wpClearBtn.Size = UDim2.new(0.5,-2,0,30)
     wpClearBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    wpClearBtn.Text = "Clear All Waypoints"
+    wpClearBtn.Text = "Clear WPs"
     wpClearBtn.Font = Enum.Font.GothamSemibold
     wpClearBtn.TextScaled = true
     wpClearBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -2271,18 +2227,18 @@ if FeatureEnabled.teleport then
     wpClearCorner.Parent = wpClearBtn
 
     local wpListLabel = Instance.new("TextLabel")
-    wpListLabel.Position = UDim2.new(0,0,0,260)
-    wpListLabel.Size = UDim2.new(1,0,0,35)
+    wpListLabel.Position = UDim2.new(0.5,2,0,225)
+    wpListLabel.Size = UDim2.new(0.5,-2,0,30)
     wpListLabel.BackgroundTransparency = 1
     wpListLabel.Font = Enum.Font.Gotham
     wpListLabel.TextScaled = true
-    wpListLabel.TextColor3 = Color3.fromRGB(200,200,200)
-    wpListLabel.TextWrapped = true
+    wpListLabel.TextColor3 = Color3.fromRGB(230,230,230)
     wpListLabel.TextXAlignment = Enum.TextXAlignment.Left
     wpListLabel.Text = "Current WPs: (none)"
     wpListLabel.Parent = tpScroll
 
     State.WaypointListLabel = wpListLabel
+    updateWaypointLabel()
 
     wpSaveBtn.MouseButton1Click:Connect(function()
         addWaypoint(wpBox.Text)
@@ -2302,10 +2258,9 @@ if FeatureEnabled.teleport then
         clearWaypoints()
         updateWaypointLabel()
     end)
-
-    updateWaypointLabel()
 end
 
+-- ESP WINDOW
 if FeatureEnabled.esp then
     local espTitle = Instance.new("TextLabel")
     espTitle.Position = UDim2.new(0,10,0,10)
@@ -2323,7 +2278,7 @@ if FeatureEnabled.esp then
     espScroll.BackgroundTransparency = 1
     espScroll.BorderSizePixel = 0
     espScroll.ScrollBarThickness = 4
-    espScroll.CanvasSize = UDim2.new(0,0,0,190)
+    espScroll.CanvasSize = UDim2.new(0,0,0,180)
     espScroll.Parent = espWindow
 
     local espScrollCorner = Instance.new("UICorner")
@@ -2347,16 +2302,22 @@ if FeatureEnabled.esp then
     espStateCorner.Parent = espStateBtn
 
     State.ESPStateBtn = espStateBtn
-    espStateBtn.MouseButton1Click:Connect(toggleESP)
+    espStateBtn.MouseButton1Click:Connect(function()
+        toggleESP()
+        showToggleNotification("ESP", State.ESP_Enabled)
+    end)
 
     colors = {
-        { name = "RED",       color = Color3.fromRGB(255,0,0) },
-        { name = "DARK RED",  color = Color3.fromRGB(150,0,0) },
-        { name = "YELLOW",    color = Color3.fromRGB(255,255,0) },
-        { name = "WHITE",     color = Color3.fromRGB(255,255,255) },
-        { name = "RAINBOW",   rainbow = true },
+        Color3.fromRGB(255,0,0),
+        Color3.fromRGB(0,255,0),
+        Color3.fromRGB(0,0,255),
+        Color3.fromRGB(255,255,0),
+        Color3.fromRGB(255,0,255),
+        Color3.fromRGB(0,255,255),
+        Color3.fromRGB(255,255,255),
     }
     colorIndex = 1
+    State.ESP_Color = colors[colorIndex]
 
     local espColorBtn = Instance.new("TextButton")
     espColorBtn.Position = UDim2.new(0,0,0,45)
@@ -2375,57 +2336,76 @@ if FeatureEnabled.esp then
 
     State.ESPColorBtn = espColorBtn
 
-    updateESPColorBtn = function()
-        local opt = colors[colorIndex]
-        State.ESP_Rainbow = opt.rainbow == true
-
-        if State.ESP_Rainbow then
-            local c = getCurrentESPColor()
-            for _,h in pairs(State.Highlights) do
-                if h then h.FillColor = c end
-            end
-            local r = math.floor(c.R*255)
-            local g = math.floor(c.G*255)
-            local b = math.floor(c.B*255)
-            espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">RAINBOW</font>', r,g,b)
-        else
-            State.ESP_Color = opt.color
-            for _,h in pairs(State.Highlights) do
-                if h then h.FillColor = opt.color end
-            end
-            local r = math.floor(opt.color.R*255)
-            local g = math.floor(opt.color.G*255)
-            local b = math.floor(opt.color.B*255)
-            espColorBtn.Text = string.format('ESP COLOR: <font color="rgb(%d,%d,%d)">%s</font>', r,g,b,opt.name)
-        end
+    function updateESPColorBtn()
+        local c = colors[colorIndex] or Color3.fromRGB(255,0,0)
+        State.ESP_Color = c
+        State.ESP_Rainbow = false
+        local r = math.floor(c.R * 255)
+        local g = math.floor(c.G * 255)
+        local b = math.floor(c.B * 255)
+        espColorBtn.Text = string.format(
+            'ESP COLOR: <font color="rgb(%d,%d,%d)">R,G,B</font>',
+            r, g, b
+        )
+        refreshAllESP()
     end
 
     updateESPColorBtn()
 
     espColorBtn.MouseButton1Click:Connect(function()
         colorIndex = colorIndex + 1
-        if colorIndex > #colors then colorIndex = 1 end
+        if colorIndex > #colors then
+            colorIndex = 1
+        end
         updateESPColorBtn()
     end)
 
-    local resetESPBtn = Instance.new("TextButton")
-    resetESPBtn.Position = UDim2.new(0,0,0,90)
-    resetESPBtn.Size = UDim2.new(1,0,0,35)
-    resetESPBtn.BackgroundColor3 = Color3.fromRGB(140,0,0)
-    resetESPBtn.Font = Enum.Font.GothamSemibold
-    resetESPBtn.TextScaled = true
-    resetESPBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    resetESPBtn.Text = "RESET ESP"
-    resetESPBtn.Parent = espScroll
-    addHoverEffect(resetESPBtn, resetESPBtn.BackgroundColor3)
+    local rainbowBtn = Instance.new("TextButton")
+    rainbowBtn.Position = UDim2.new(0,0,0,90)
+    rainbowBtn.Size = UDim2.new(1,0,0,35)
+    rainbowBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    rainbowBtn.Font = Enum.Font.GothamSemibold
+    rainbowBtn.TextScaled = true
+    rainbowBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    rainbowBtn.Text = "Rainbow: OFF"
+    rainbowBtn.Parent = espScroll
+    addHoverEffect(rainbowBtn, rainbowBtn.BackgroundColor3)
 
-    local resetESPCorner = Instance.new("UICorner")
-    resetESPCorner.CornerRadius = UDim.new(0,8)
-    resetESPCorner.Parent = resetESPBtn
+    local rainbowCorner = Instance.new("UICorner")
+    rainbowCorner.CornerRadius = UDim.new(0,8)
+    rainbowCorner.Parent = rainbowBtn
 
-    resetESPBtn.MouseButton1Click:Connect(resetESP)
+    rainbowBtn.MouseButton1Click:Connect(function()
+        State.ESP_Rainbow = not State.ESP_Rainbow
+        if State.ESP_Rainbow then
+            rainbowBtn.Text = "Rainbow: ON"
+        else
+            rainbowBtn.Text = "Rainbow: OFF"
+            updateESPColorBtn()
+        end
+    end)
+
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Position = UDim2.new(0,0,0,135)
+    resetBtn.Size = UDim2.new(1,0,0,35)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    resetBtn.Font = Enum.Font.GothamSemibold
+    resetBtn.TextScaled = true
+    resetBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    resetBtn.Text = "Reset ESP"
+    resetBtn.Parent = espScroll
+    addHoverEffect(resetBtn, resetBtn.BackgroundColor3)
+
+    local resetCorner = Instance.new("UICorner")
+    resetCorner.CornerRadius = UDim.new(0,8)
+    resetCorner.Parent = resetBtn
+
+    resetBtn.MouseButton1Click:Connect(function()
+        resetESP()
+    end)
 end
 
+-- SETTINGS WINDOW
 if FeatureEnabled.setting then
     local setTitle = Instance.new("TextLabel")
     setTitle.Position = UDim2.new(0,10,0,10)
@@ -2443,48 +2423,15 @@ if FeatureEnabled.setting then
     setScroll.BackgroundTransparency = 1
     setScroll.BorderSizePixel = 0
     setScroll.ScrollBarThickness = 4
-    setScroll.CanvasSize = UDim2.new(0,0,0,230)
+    setScroll.CanvasSize = UDim2.new(0,0,0,200)
     setScroll.Parent = settingsWindow
 
     local setScrollCorner = Instance.new("UICorner")
     setScrollCorner.CornerRadius = UDim.new(0,8)
     setScrollCorner.Parent = setScroll
 
-    local hideLabel = Instance.new("TextLabel")
-    hideLabel.Position = UDim2.new(0,0,0,0)
-    hideLabel.Size = UDim2.new(0.5,0,0,30)
-    hideLabel.BackgroundTransparency = 1
-    hideLabel.Text = "Hide UI:"
-    hideLabel.Font = Enum.Font.Gotham
-    hideLabel.TextScaled = true
-    hideLabel.TextColor3 = Color3.fromRGB(230,230,230)
-    hideLabel.TextXAlignment = Enum.TextXAlignment.Left
-    hideLabel.Parent = setScroll
-
-    local hideHotkeyBtn = Instance.new("TextButton")
-    hideHotkeyBtn.Position = UDim2.new(0.5,0,0,0)
-    hideHotkeyBtn.Size = UDim2.new(0.5,0,0,30)
-    hideHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    hideHotkeyBtn.Font = Enum.Font.GothamSemibold
-    hideHotkeyBtn.TextScaled = true
-    hideHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    hideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
-    hideHotkeyBtn.Parent = setScroll
-    addHoverEffect(hideHotkeyBtn, hideHotkeyBtn.BackgroundColor3)
-
-    local hideHotkeyCorner = Instance.new("UICorner")
-    hideHotkeyCorner.CornerRadius = UDim.new(0,8)
-    hideHotkeyCorner.Parent = hideHotkeyBtn
-
-    State.HideHotkeyBtn = hideHotkeyBtn
-
-    hideHotkeyBtn.MouseButton1Click:Connect(function()
-        State.WaitingForHideHotKey = true
-        hideHotkeyBtn.Text = "Hide: [Press Key]"
-    end)
-
     local cfgLabel = Instance.new("TextLabel")
-    cfgLabel.Position = UDim2.new(0,0,0,40)
+    cfgLabel.Position = UDim2.new(0,0,0,0)
     cfgLabel.Size = UDim2.new(0.5,0,0,30)
     cfgLabel.BackgroundTransparency = 1
     cfgLabel.Text = "Config name:"
@@ -2495,7 +2442,7 @@ if FeatureEnabled.setting then
     cfgLabel.Parent = setScroll
 
     local cfgBox = Instance.new("TextBox")
-    cfgBox.Position = UDim2.new(0.5,0,0,40)
+    cfgBox.Position = UDim2.new(0.5,0,0,0)
     cfgBox.Size = UDim2.new(0.5,0,0,30)
     cfgBox.BackgroundColor3 = Color3.fromRGB(35,35,45)
     cfgBox.Font = Enum.Font.Gotham
@@ -2505,562 +2452,338 @@ if FeatureEnabled.setting then
     cfgBox.Text = ""
     cfgBox.Parent = setScroll
 
-    local cfgBoxCorner = Instance.new("UICorner")
-    cfgBoxCorner.CornerRadius = UDim.new(0,6)
-    cfgBoxCorner.Parent = cfgBox
+    local cfgCorner = Instance.new("UICorner")
+    cfgCorner.CornerRadius = UDim.new(0,6)
+    cfgCorner.Parent = cfgBox
 
     State.ConfigNameBox = cfgBox
 
-    local saveCfgBtn = Instance.new("TextButton")
-    saveCfgBtn.Position = UDim2.new(0,0,0,80)
-    saveCfgBtn.Size = UDim2.new(1,0,0,35)
-    saveCfgBtn.BackgroundColor3 = Color3.fromRGB(0,90,180)
-    saveCfgBtn.Font = Enum.Font.GothamSemibold
-    saveCfgBtn.TextScaled = true
-    saveCfgBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    saveCfgBtn.Text = "Save Config"
-    saveCfgBtn.Parent = setScroll
-    addHoverEffect(saveCfgBtn, saveCfgBtn.BackgroundColor3)
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Position = UDim2.new(0,0,0,40)
+    saveBtn.Size = UDim2.new(0.5,-2,0,35)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    saveBtn.Font = Enum.Font.GothamSemibold
+    saveBtn.TextScaled = true
+    saveBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    saveBtn.Text = "Save Config"
+    saveBtn.Parent = setScroll
+    addHoverEffect(saveBtn, saveBtn.BackgroundColor3)
 
-    local saveCfgCorner = Instance.new("UICorner")
-    saveCfgCorner.CornerRadius = UDim.new(0,8)
-    saveCfgCorner.Parent = saveCfgBtn
+    local saveCorner = Instance.new("UICorner")
+    saveCorner.CornerRadius = UDim.new(0,8)
+    saveCorner.Parent = saveBtn
 
-    saveCfgBtn.MouseButton1Click:Connect(saveConfig)
-
-    local loadCfgBtn = Instance.new("TextButton")
-    loadCfgBtn.Position = UDim2.new(0,0,0,120)
-    loadCfgBtn.Size = UDim2.new(1,0,0,35)
-    loadCfgBtn.BackgroundColor3 = Color3.fromRGB(0,90,180)
-    loadCfgBtn.Font = Enum.Font.GothamSemibold
-    loadCfgBtn.TextScaled = true
-    loadCfgBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    loadCfgBtn.Text = "Load Config"
-    loadCfgBtn.Parent = setScroll
-    addHoverEffect(loadCfgBtn, loadCfgBtn.BackgroundColor3)
-
-    local loadCfgCorner = Instance.new("UICorner")
-    loadCfgCorner.CornerRadius = UDim.new(0,8)
-    loadCfgCorner.Parent = loadCfgBtn
-
-    loadCfgBtn.MouseButton1Click:Connect(loadConfig)
-
-    -- Console hotkey setting
-    local consoleLabel = Instance.new("TextLabel")
-    consoleLabel.Position = UDim2.new(0,0,0,160)
-    consoleLabel.Size = UDim2.new(0.5,0,0,30)
-    consoleLabel.BackgroundTransparency = 1
-    consoleLabel.Text = "Console:"
-    consoleLabel.Font = Enum.Font.Gotham
-    consoleLabel.TextScaled = true
-    consoleLabel.TextColor3 = Color3.fromRGB(230,230,230)
-    consoleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    consoleLabel.Parent = setScroll
-
-    local consoleHotkeyBtn = Instance.new("TextButton")
-    consoleHotkeyBtn.Position = UDim2.new(0.5,0,0,160)
-    consoleHotkeyBtn.Size = UDim2.new(0.5,0,0,30)
-    consoleHotkeyBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
-    consoleHotkeyBtn.Font = Enum.Font.GothamSemibold
-    consoleHotkeyBtn.TextScaled = true
-    consoleHotkeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    consoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
-    consoleHotkeyBtn.Parent = setScroll
-    addHoverEffect(consoleHotkeyBtn, consoleHotkeyBtn.BackgroundColor3)
-
-    local consoleHotkeyCorner = Instance.new("UICorner")
-    consoleHotkeyCorner.CornerRadius = UDim.new(0,8)
-    consoleHotkeyCorner.Parent = consoleHotkeyBtn
-
-    State.ConsoleHotkeyBtn = consoleHotkeyBtn
-
-    consoleHotkeyBtn.MouseButton1Click:Connect(function()
-        State.WaitingForConsoleHotKey = true
-        consoleHotkeyBtn.Text = "Console: [Press Key]"
+    saveBtn.MouseButton1Click:Connect(function()
+        saveConfig()
     end)
+
+    local loadBtn = Instance.new("TextButton")
+    loadBtn.Position = UDim2.new(0.5,2,0,40)
+    loadBtn.Size = UDim2.new(0.5,-2,0,35)
+    loadBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    loadBtn.Font = Enum.Font.GothamSemibold
+    loadBtn.TextScaled = true
+    loadBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    loadBtn.Text = "Load Config"
+    loadBtn.Parent = setScroll
+    addHoverEffect(loadBtn, loadBtn.BackgroundColor3)
+
+    local loadCorner = Instance.new("UICorner")
+    loadCorner.CornerRadius = UDim.new(0,8)
+    loadCorner.Parent = loadBtn
+
+    loadBtn.MouseButton1Click:Connect(function()
+        loadConfig()
+    end)
+
+    local hideBtn = Instance.new("TextButton")
+    hideBtn.Position = UDim2.new(0,0,0,85)
+    hideBtn.Size = UDim2.new(1,0,0,35)
+    hideBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    hideBtn.Font = Enum.Font.GothamSemibold
+    hideBtn.TextScaled = true
+    hideBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    hideBtn.Text = "Hide: " .. State.Hide_HotKeyName
+    hideBtn.Parent = setScroll
+    addHoverEffect(hideBtn, hideBtn.BackgroundColor3)
+
+    local hideCorner = Instance.new("UICorner")
+    hideCorner.CornerRadius = UDim.new(0,8)
+    hideCorner.Parent = hideBtn
+
+    State.HideHotkeyBtn = hideBtn
+
+    hideBtn.MouseButton1Click:Connect(function()
+        State.WaitingForHideHotKey = true
+        hideBtn.Text = "Hide: [Press Key]"
+    end)
+
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Position = UDim2.new(0,0,0,130)
+    infoLabel.Size = UDim2.new(1,0,0,60)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.TextScaled = true
+    infoLabel.TextColor3 = Color3.fromRGB(220,220,220)
+    infoLabel.TextWrapped = true
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.Text = "Use Insert (default) to hide/show main panel.\nYou can change it here."
+    infoLabel.Parent = setScroll
 end
 
-local y = 0
-local function createMainButton(text, color, callback, isSettings)
-    local btn = Instance.new("TextButton")
-    btn.Position = UDim2.new(0,0,0,y)
-    btn.Size = UDim2.new(1,0,0,40)
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextScaled = true
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Text = text
-    btn.Parent = mainScroll
+-- UPDATES WINDOW
+local updatesWindow = createSettingsWindow("UpdatesWindow", 260, 180)
+State.Updates_Window = updatesWindow
+registerSettingsWindow(updatesWindow)
 
-    if isSettings then
-        -- Settings button: dark blue bg, white text, no stroke
-        color = Color3.fromRGB(0,0,90)
-        btn.BackgroundColor3 = color
-        btn.AutoButtonColor = false
-    else
-        addHoverEffect(btn, color)
-        btn.BackgroundColor3 = color
+do
+    local upTitle = Instance.new("TextLabel")
+    upTitle.Position = UDim2.new(0,10,0,10)
+    upTitle.Size = UDim2.new(1,-20,0,25)
+    upTitle.BackgroundTransparency = 1
+    upTitle.Text = "Updates"
+    upTitle.TextColor3 = Color3.fromRGB(200,200,255)
+    upTitle.TextScaled = true
+    upTitle.Font = Enum.Font.GothamBold
+    upTitle.Parent = updatesWindow
+
+    local upScroll = Instance.new("ScrollingFrame")
+    upScroll.Position = UDim2.new(0,10,0,45)
+    upScroll.Size = UDim2.new(1,-20,1,-55)
+    upScroll.BackgroundTransparency = 1
+    upScroll.BorderSizePixel = 0
+    upScroll.ScrollBarThickness = 4
+    upScroll.CanvasSize = UDim2.new(0,0,0,200)
+    upScroll.Parent = updatesWindow
+
+    local upScrollCorner = Instance.new("UICorner")
+    upScrollCorner.CornerRadius = UDim.new(0,8)
+    upScrollCorner.Parent = upScroll
+
+    local upText = Instance.new("TextLabel")
+    upText.Position = UDim2.new(0,0,0,0)
+    upText.Size = UDim2.new(1,0,0,180)
+    upText.BackgroundTransparency = 1
+    upText.Font = Enum.Font.Gotham
+    upText.TextScaled = true
+    upText.TextWrapped = true
+    upText.TextColor3 = Color3.fromRGB(230,230,230)
+    upText.TextXAlignment = Enum.TextXAlignment.Left
+    upText.TextYAlignment = Enum.TextYAlignment.Top
+    upText.Text = "- Console & time command removed\n- Admin panel added\n- Main panel is now resizable\n- Hide hotkey closes all side panels"
+    upText.Parent = upScroll
+end
+
+-- دکمه‌ها داخل پنل اصلی (Main)
+do
+    local y = 0
+    local function makeMainButton(text, callback)
+        local btn = Instance.new("TextButton")
+        btn.Position = UDim2.new(0,0,0,y)
+        btn.Size = UDim2.new(1,0,0,35)
+        btn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextScaled = true
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.Text = text
+        btn.Parent = mainScroll
+        addHoverEffect(btn, btn.BackgroundColor3)
+
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0,8)
+        c.Parent = btn
+
+        btn.MouseButton1Click:Connect(function()
+            if callback then
+                callback()
+            end
+        end)
+
+        y = y + 40
+        mainScroll.CanvasSize = UDim2.new(0,0,0,y+10)
     end
 
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0,8)
-    c.Parent = btn
-
-    -- Zoom in/out on hover for main options
-    local baseSize = btn.Size
-    local basePos = btn.Position
-
-    btn.MouseEnter:Connect(function()
-        local biggerSize = UDim2.new(baseSize.X.Scale, baseSize.X.Offset, baseSize.Y.Scale, baseSize.Y.Offset + 4)
-        local newPos = UDim2.new(basePos.X.Scale, basePos.X.Offset, basePos.Y.Scale, basePos.Y.Offset - 2)
-        TweenService:Create(
-            btn,
-            TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-            { Size = biggerSize, Position = newPos }
-        ):Play()
-    end)
-
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(
-            btn,
-            TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-            { Size = baseSize, Position = basePos }
-        ):Play()
-    end)
-
-    y = y + 50
-
-    if callback then
-        btn.MouseButton1Click:Connect(callback)
+    if FeatureEnabled.fly then
+        makeMainButton("Fly", function()
+            toggleSettingsWindow(flyWindow)
+        end)
     end
 
-    return btn
-end
+    if FeatureEnabled.freecam then
+        makeMainButton("FreeCam", function()
+            toggleSettingsWindow(freeCamWindow)
+        end)
+    end
 
-if FeatureEnabled.fly then
-    createMainButton("Fly", grayBtnColor, function()
-        if State.Fly_Window then
-            toggleSettingsWindow(State.Fly_Window)
-        end
-    end, false)
-end
+    if FeatureEnabled.esp then
+        makeMainButton("ESP", function()
+            toggleSettingsWindow(espWindow)
+        end)
+    end
 
-if FeatureEnabled.teleport then
-    createMainButton("Teleportation", grayBtnColor, function()
-        if State.Teleport_Window then
-            toggleSettingsWindow(State.Teleport_Window)
-        end
-    end, false)
-end
+    if FeatureEnabled.teleport then
+        makeMainButton("Teleport", function()
+            toggleSettingsWindow(teleportWindow)
+        end)
+    end
 
-if FeatureEnabled.esp then
-    createMainButton("ESP", grayBtnColor, function()
-        if State.ESP_Window then
-            toggleSettingsWindow(State.ESP_Window)
-        end
-    end, false)
-end
+    if FeatureEnabled.setting then
+        makeMainButton("Settings", function()
+            toggleSettingsWindow(settingsWindow)
+        end)
+    end
 
-if FeatureEnabled.freecam then
-    createMainButton("FreeCam", grayBtnColor, function()
-        if State.FreeCam_Window then
-            toggleSettingsWindow(State.FreeCam_Window)
-        end
-    end, false)
-end
+    makeMainButton("Admin Panel", function()
+        toggleSettingsWindow(adminWindow)
+    end)
 
-local settingsBtn
-if FeatureEnabled.setting then
-    settingsBtn = createMainButton("Settings", Color3.fromRGB(0,0,0), function()
-        if State.Settings_Window then
-            toggleSettingsWindow(State.Settings_Window)
-        end
-    end, true)
-end
-
-local comingBtn = createMainButton("Coming Soon", darkRedBtnColor, nil, false)
-State.ComingSoonBtn = comingBtn
-
-local function showTimeOverNotification()
-    local notifGui = Instance.new("ScreenGui")
-    notifGui.Name = "ZynixTimeOver"
-    notifGui.ResetOnSpawn = false
-    notifGui.Parent = playerGui
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = notifGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 0, 0)
-    stroke.Parent = frame
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0,10,0,10)
-    label.Font = Enum.Font.GothamBold
-    label.TextScaled = true
-    label.TextColor3 = Color3.fromRGB(255,0,0)
-    label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Text = "Your time is over!"
-    label.Parent = frame
-
-    local zoomIn = TweenService:Create(
-        frame,
-        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
-    )
-    zoomIn:Play()
-
-    task.spawn(function()
-        zoomIn.Completed:Wait()
-        task.wait(4)
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Wait()
-        notifGui:Destroy()
+    makeMainButton("Updates", function()
+        toggleSettingsWindow(updatesWindow)
     end)
 end
 
--- 10-second warning notification: black bg (70%), white stroke, white text, zoom anim, 3s
-local function showTimeAlmostOverNotification()
-    local notifGui = Instance.new("ScreenGui")
-    notifGui.Name = "ZynixTimeAlmostOver"
-    notifGui.ResetOnSpawn = false
-    notifGui.Parent = playerGui
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = notifGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Parent = frame
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0,10,0,10)
-    label.Font = Enum.Font.GothamBold
-    label.TextScaled = true
-    label.TextColor3 = Color3.fromRGB(255,255,255)
-    label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Text = "Your time will end in 10 seconds!"
-    label.Parent = frame
-
-    local zoomIn = TweenService:Create(
-        frame,
-        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 360, 0, 80), BackgroundTransparency = 0.3 }
-    )
-    zoomIn:Play()
-
-    task.spawn(function()
-        zoomIn.Completed:Wait()
-        task.wait(3)
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Wait()
-        notifGui:Destroy()
-    end)
-end
-
-function showZCTimeInfoNotification()
-    if not State.ZC_TotalSeconds or State.ZC_TotalSeconds <= 0 then return end
-
-    local notifGui = Instance.new("ScreenGui")
-    notifGui.Name = "ZynixZCInfo"
-    notifGui.ResetOnSpawn = false
-    notifGui.Parent = playerGui
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 10, 0, 10)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = notifGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Parent = frame
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0,10,0,10)
-    label.Font = Enum.Font.GothamBold
-    label.TextScaled = true
-    label.RichText = true
-    label.TextColor3 = Color3.fromRGB(255,255,255)
-    label.TextXAlignment = Enum.TextXAlignment.Center
-
-    local t = formatTime(State.ZC_TotalSeconds)
-    label.Text = 'After <font color="rgb(0,255,255)">SC: ' .. t .. '</font> ends, cheat will be disabled.'
-    label.Parent = frame
-
-    local zoomIn = TweenService:Create(
-        frame,
-        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 420, 0, 90), BackgroundTransparency = 0.3 }
-    )
-    zoomIn:Play()
-
-    task.spawn(function()
-        zoomIn.Completed:Wait()
-        task.wait(4)
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Wait()
-        notifGui:Destroy()
-    end)
-end
-
+-- پیاده‌سازی showUpdatesPanel
 showUpdatesPanel = function()
-    if not ScreenGui then return end
-
-    local frame = Instance.new("Frame")
-    frame.Name = "ZynixUpdatesPanel"
-    frame.AnchorPoint = Vector2.new(0.5,0.5)
-    frame.Position = UDim2.new(0.5,0,0.5,0)
-    frame.Size = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = ScreenGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0,12)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255,255,255)
-    stroke.Parent = frame
-
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Size = UDim2.new(1,-20,0,40)
-    titleLabel.Position = UDim2.new(0,10,0,10)
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextScaled = true
-    titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
-    titleLabel.Text = "Updates!"
-    titleLabel.Parent = frame
-
-    local updatesLabel = Instance.new("TextLabel")
-    updatesLabel.BackgroundTransparency = 1
-    updatesLabel.Size = UDim2.new(1,-30,1,-60)
-    updatesLabel.Position = UDim2.new(0,15,0,55)
-    updatesLabel.Font = Enum.Font.Gotham
-    updatesLabel.TextScaled = true
-    updatesLabel.TextColor3 = Color3.fromRGB(255,255,255)
-    updatesLabel.RichText = true
-    updatesLabel.TextXAlignment = Enum.TextXAlignment.Left
-    updatesLabel.TextYAlignment = Enum.TextYAlignment.Top
-    updatesLabel.TextWrapped = true
-
-    updatesLabel.Text =
-        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
-        '<font color="rgb(0,255,0)"><b>+ </b></font><font color="rgb(255,255,255)">Added zoom in / zoom out animation to the \"Press M to unlock your mouse\" notification</font>\n' ..
-        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
-        '<font color="rgb(255,0,0)"><b>- </b></font><font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
-
-    updatesLabel.Parent = frame
-
-    local zoomIn = TweenService:Create(
-        frame,
-        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Size = UDim2.new(0, 340, 0, 220), BackgroundTransparency = 0.3 }
-    )
-    zoomIn:Play()
-
-    task.spawn(function()
-        zoomIn.Completed:Wait()
-        task.wait(6)
-        local zoomOut = TweenService:Create(
-            frame,
-            TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In),
-            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
-        )
-        zoomOut:Play()
-        zoomOut.Completed:Wait()
-        frame:Destroy()
-        showZCTimeInfoNotification()
-    end)
+    if not updatesWindow then return end
+    local info = WindowInfoByFrame[updatesWindow]
+    if not info then return end
+    if not info.open then
+        toggleSettingsWindow(updatesWindow)
+    end
 end
 
-disableEverythingAndClose = function()
-    State.ZC_Enabled = false
-
-    stopFly()
-    setFreeCamEnabled(false)
+-- تایمر SC و قفل کردن همه چیز بعد از اتمام زمان
+function disableEverythingAndClose()
+    if FeatureEnabled.fly then
+        stopFly()
+    end
+    if FeatureEnabled.freecam and State.FreeCam_Enabled then
+        setFreeCamEnabled(false)
+    end
     if FeatureEnabled.esp then
         setESPEnabled(false)
     end
 
-    if ScreenGui then
+    for _, h in pairs(State.Highlights) do
+        if h then
+            pcall(function() h:Destroy() end)
+        end
+    end
+    State.Highlights = {}
+
+    if not State.UIHidden then
         hideMainUI()
     end
 
-    for _, info in ipairs(SettingsWindows) do
-        if info.open then
-            toggleSettingsWindow(info.frame)
-        end
-    end
+    showCenterNotification("Your SC time has expired!", Color3.fromRGB(255,0,0))
 end
 
-startZCTimer = function()
-    if not State.ZC_Enabled or State.ZC_Expired or State.ZC_TotalSeconds <= 0 then return end
-    if State.ZC_TimerRunning then return end
-    State.ZC_TimerRunning = true
+function showZCTimeInfoNotification()
+    if not State.ZC_Enabled or State.ZC_TotalSeconds <= 0 then
+        showCenterNotification("SC time: unlimited", Color3.fromRGB(0,255,255))
+        return
+    end
+    local totalStr = formatTime(State.ZC_TotalSeconds)
+    local remainStr = formatTime(State.ZC_RemainingSeconds)
+    showCenterNotification("SC total: "..totalStr.."\nRemaining: "..remainStr, Color3.fromRGB(0,255,255))
+end
 
-    task.spawn(function()
-        while State.ZC_Enabled and not State.ZC_Expired and State.ZC_RemainingSeconds > 0 do
-            refreshSCTimerLabel()
-
-            if State.ZC_RemainingSeconds <= 10 and not State.ZC_WarningShown then
-                State.ZC_WarningShown = true
-                showTimeAlmostOverNotification()
-            end
-
-            task.wait(1)
-            State.ZC_RemainingSeconds = State.ZC_RemainingSeconds - 1
-        end
-
-        if not State.ZC_Expired and State.ZC_RemainingSeconds <= 0 then
-            State.ZC_RemainingSeconds = 0
-            refreshSCTimerLabel()
-            State.ZC_Expired = true
-            disableEverythingAndClose()
-            showTimeOverNotification()
+if State.ZC_TimerLabel then
+    State.ZC_TimerLabel.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            showZCTimeInfoNotification()
         end
     end)
 end
 
-UserInputService.InputBegan:Connect(function(input, gp)
-    if State.ZC_Expired then return end
-    if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    local key = input.KeyCode
-
-    if State.WaitingForHideHotKey then
-        State.WaitingForHideHotKey = false
-        State.Hide_HotKey = key
-        State.Hide_HotKeyName = key.Name or "Key"
-        if State.HideHotkeyBtn then
-            State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
-        end
+function startZCTimer()
+    if not State.ZC_Enabled or State.ZC_TimerRunning or State.ZC_TotalSeconds <= 0 then
         return
     end
+    State.ZC_TimerRunning = true
+    task.spawn(function()
+        while State.ZC_Enabled and not State.ZC_Expired and State.ZC_RemainingSeconds > 0 do
+            task.wait(1)
+            if State.ZC_Expired then break end
+            State.ZC_RemainingSeconds = State.ZC_RemainingSeconds - 1
+            refreshSCTimerLabel()
 
-    if State.WaitingForFlyHotKey and FeatureEnabled.fly then
+            if State.ZC_RemainingSeconds <= 10 and not State.ZC_WarningShown then
+                State.ZC_WarningShown = true
+                showCenterNotification("SC time ends in "..tostring(State.ZC_RemainingSeconds).."s", Color3.fromRGB(255,230,0))
+            end
+        end
+        if not State.ZC_Expired and State.ZC_RemainingSeconds <= 0 then
+            State.ZC_Expired = true
+            refreshSCTimerLabel()
+            disableEverythingAndClose()
+        end
+    end)
+end
+
+-- هات‌کی‌های کلی (Fly / FreeCam / Hide + حرکت FreeCam + M برای موس)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    if State.ZC_Expired then return end
+
+    local key = input.KeyCode
+
+    -- گرفتن هات‌کی جدید
+    if State.WaitingForFlyHotKey then
         State.WaitingForFlyHotKey = false
         State.Fly_HotKey = key
-        State.Fly_HotKeyName = key.Name or "Key"
+        State.Fly_HotKeyName = key.Name
         if State.FlyHotkeyBtn then
             State.FlyHotkeyBtn.Text = "HotKey: " .. State.Fly_HotKeyName
         end
         return
     end
 
-    if State.WaitingForFreeCamHotKey and FeatureEnabled.freecam then
+    if State.WaitingForFreeCamHotKey then
         State.WaitingForFreeCamHotKey = false
         State.FreeCam_HotKey = key
-        State.FreeCam_HotKeyName = key.Name or "Key"
+        State.FreeCam_HotKeyName = key.Name
         if State.FreeCamHotkeyBtn then
             State.FreeCamHotkeyBtn.Text = "HotKey: " .. State.FreeCam_HotKeyName
         end
         return
     end
 
-    if State.WaitingForConsoleHotKey then
-        State.WaitingForConsoleHotKey = false
-        State.Console_HotKey = key
-        State.Console_HotKeyName = key.Name or "Key"
-        if State.ConsoleHotkeyBtn then
-            State.ConsoleHotkeyBtn.Text = "Console: " .. State.Console_HotKeyName
+    if State.WaitingForHideHotKey then
+        State.WaitingForHideHotKey = false
+        State.Hide_HotKey = key
+        State.Hide_HotKeyName = key.Name
+        if State.HideHotkeyBtn then
+            State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
         end
         return
     end
 
-    -- Console toggle (independent from main panel)
-    if State.Console_HotKey and key == State.Console_HotKey then
-        toggleConsole()
-        return
-    end
-
-    if State.Hide_HotKey and key == State.Hide_HotKey then
-        if not State.UIHidden then
-            hideMainUI()
-        else
+    -- Hide UI
+    if key == State.Hide_HotKey then
+        if State.UIHidden then
             showMainUI()
+        else
+            hideMainUI()
         end
         return
     end
 
+    -- Fly hotkey
     if FeatureEnabled.fly and State.Fly_HotKey and key == State.Fly_HotKey then
         toggleFly()
         return
     end
 
+    -- FreeCam hotkey
     if FeatureEnabled.freecam and State.FreeCam_HotKey and key == State.FreeCam_HotKey then
         setFreeCamEnabled(not State.FreeCam_Enabled)
         return
     end
 
-    if FeatureEnabled.freecam and State.FreeCam_Enabled and key == Enum.KeyCode.M then
-        if State.FreeCam_MouseLocked then
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
-            State.FreeCam_MouseLocked = false
-        else
-            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-            UserInputService.MouseIconEnabled = false
-            State.FreeCam_MouseLocked = true
-        end
-        return
-    end
-
+    -- حرکت FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled then
         if key == Enum.KeyCode.W then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
@@ -3074,27 +2797,40 @@ UserInputService.InputBegan:Connect(function(input, gp)
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,1,0)
         elseif key == Enum.KeyCode.LeftControl then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,-1,0)
+        elseif key == Enum.KeyCode.M then
+            if State.FreeCam_MouseLocked then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+                State.FreeCam_MouseLocked = false
+            else
+                UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                UserInputService.MouseIconEnabled = false
+                State.FreeCam_MouseLocked = true
+            end
         end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gp)
-    if State.ZC_Expired then return end
-    if gp or not State.FreeCam_Enabled or not FeatureEnabled.freecam then return end
+    if gp then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    if State.ZC_Expired then return end
+
     local key = input.KeyCode
 
-    if key == Enum.KeyCode.W then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,-1)
-    elseif key == Enum.KeyCode.S then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,1)
-    elseif key == Enum.KeyCode.A then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(-1,0,0)
-    elseif key == Enum.KeyCode.D then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(1,0,0)
-    elseif key == Enum.KeyCode.Space then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
-    elseif key == Enum.KeyCode.LeftControl then
-        State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
+    if FeatureEnabled.freecam and State.FreeCam_Enabled then
+        if key == Enum.KeyCode.W then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,-1)
+        elseif key == Enum.KeyCode.S then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,0,1)
+        elseif key == Enum.KeyCode.A then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(-1,0,0)
+        elseif key == Enum.KeyCode.D then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(1,0,0)
+        elseif key == Enum.KeyCode.Space then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,1,0)
+        elseif key == Enum.KeyCode.LeftControl then
+            State.FreeCam_MoveDir = State.FreeCam_MoveDir - Vector3.new(0,-1,0)
+        end
     end
 end)
