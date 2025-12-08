@@ -132,6 +132,8 @@ local State = {
 
     -- toggle notifications (bottom-right)
     ToggleNotifs = {},
+    -- join notifications (bottom-right, لایه‌ی جدا)
+    JoinNotifs = {},
 }
 
 ---------------------------------------------------------
@@ -347,7 +349,7 @@ local function getCurrentESPColor()
 end
 
 ---------------------------------------------------------
--- Join Notification (پایین راست)
+-- Join Notification (پایین راست، استک مجزا)
 ---------------------------------------------------------
 local function showJoinNotification(playerName)
     local notifGui = Instance.new("ScreenGui")
@@ -355,10 +357,13 @@ local function showJoinNotification(playerName)
     notifGui.ResetOnSpawn = false
     notifGui.Parent = playerGui
 
+    local height = 60
+    local spacing = 8
+
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 260, 0, 60)
+    frame.Size = UDim2.new(0, 260, 0, height)
     frame.AnchorPoint = Vector2.new(1, 1)
-    frame.Position = UDim2.new(1, 280, 1, -20)
+    frame.Position = UDim2.new(1, 280, 1, -20) -- از بیرون وارد می‌شود
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
@@ -384,6 +389,22 @@ local function showJoinNotification(playerName)
     label.Text = playerName .. " joined the game!"
     label.Parent = frame
 
+    -- نوتیف‌های جوین قبلی رو یک طبقه بالاتر ببریم
+    local delta = height + spacing
+    for _, info in ipairs(State.JoinNotifs) do
+        if info.Frame and info.Frame.Parent then
+            local pos = info.Frame.Position
+            local newYOff = pos.Y.Offset - delta
+            TweenService:Create(
+                info.Frame,
+                TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                { Position = UDim2.new(1, -20, 1, newYOff) }
+            ):Play()
+        end
+    end
+
+    table.insert(State.JoinNotifs, {Gui = notifGui, Frame = frame})
+
     local tweenIn = TweenService:Create(
         frame,
         TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
@@ -393,13 +414,22 @@ local function showJoinNotification(playerName)
 
     task.spawn(function()
         task.wait(3)
+        local currentPos = frame.Position
         local tweenOut = TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
-            { Position = UDim2.new(1, 280, 1, -20), BackgroundTransparency = 1 }
+            { Position = UDim2.new(1, 280, 1, currentPos.Y.Offset), BackgroundTransparency = 1 }
         )
         tweenOut:Play()
         tweenOut.Completed:Wait()
+
+        for i, info in ipairs(State.JoinNotifs) do
+            if info.Frame == frame then
+                table.remove(State.JoinNotifs, i)
+                break
+            end
+        end
+
         notifGui:Destroy()
     end)
 end
@@ -456,21 +486,29 @@ local function showCenterNotification(text, color)
 end
 
 ---------------------------------------------------------
--- نوتیف پایین راست برای هات‌کی‌ها (stackable)
+-- نوتیف پایین راست برای هات‌کی‌ها (stackable، جدا از جوین)
 ---------------------------------------------------------
 local function showToggleNotification(featureName, isOn)
-    -- UI ممکنه مخفی باشه (ScreenGui.Enabled = false) 
+    -- نوتیف هات‌کی مستقل از UI اصلی است (ScreenGui.Enabled روی این اثر ندارد)
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixToggleNotification"
     notifGui.ResetOnSpawn = false
     notifGui.Parent = playerGui
 
+    local height = 60
+    local spacing = 8
+
+    -- اگر نوتیف جوین وجود دارد، نوتیف هات‌کی بالای آن‌ها شروع شود
+    local joinCount = #State.JoinNotifs
+    local baseYOffset = -20 - (height + spacing) * joinCount
+
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 260, 0, 60)
+    frame.Size = UDim2.new(0, 260, 0, height)
     frame.AnchorPoint = Vector2.new(1, 1)
-    frame.Position = UDim2.new(1, 280, 1, -20)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)     
-    frame.BackgroundTransparency = 0.3                    
+    -- از بیرونِ صفحه وارد می‌شود
+    frame.Position = UDim2.new(1, 280, 1, baseYOffset)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)  -- بک‌گراند مشکی
+    frame.BackgroundTransparency = 0.3                 -- اوپسیتی حدود 70٪
     frame.BorderSizePixel = 0
     frame.Parent = notifGui
 
@@ -480,17 +518,17 @@ local function showToggleNotification(featureName, isOn)
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 230, 0) 
+    stroke.Color = Color3.fromRGB(255, 230, 0)        -- استروک زرد
     stroke.Parent = frame
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
     label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0, 10, 0, 10)
+    label.Position = UDim2.new(0,10,0,10)
     label.Font = Enum.Font.GothamBold
     label.TextScaled = true
     label.RichText = true
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextColor3 = Color3.fromRGB(255,255,255)
     label.TextXAlignment = Enum.TextXAlignment.Center
 
     local onColor = isOn and "0,255,0" or "255,0,0"
@@ -503,10 +541,8 @@ local function showToggleNotification(featureName, isOn)
     )
     label.Parent = frame
 
-    local height = frame.Size.Y.Offset
-    local spacing = 8
+    -- نوتیف‌های هات‌کی قبلی را یک طبقه بالاتر ببریم
     local delta = height + spacing
-
     for _, info in ipairs(State.ToggleNotifs) do
         if info.Frame and info.Frame.Parent then
             local pos = info.Frame.Position
@@ -521,16 +557,18 @@ local function showToggleNotification(featureName, isOn)
 
     table.insert(State.ToggleNotifs, {Gui = notifGui, Frame = frame})
 
+    -- انیمیشن ورود از راست
     local tweenIn = TweenService:Create(
         frame,
         TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-        { Position = UDim2.new(1, -20, 1, -20) }
+        { Position = UDim2.new(1, -20, 1, baseYOffset) }
     )
     tweenIn:Play()
 
     task.spawn(function()
         task.wait(2.5)
         local currentPos = frame.Position
+        -- خروج به سمت راست و فید اوت
         local tweenOut = TweenService:Create(
             frame,
             TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
@@ -906,7 +944,6 @@ local function toggleFly()
     else
         startFly()
     end
-    -- نوتیف پایین راست برای Fly
     showToggleNotification("Fly", State.Fly_Enabled)
 end
 
@@ -966,7 +1003,6 @@ local function setFreeCamEnabled(state)
         end
     end
 
-    -- نوتیف پایین راست برای FreeCam
     showToggleNotification("FreeCam", State.FreeCam_Enabled)
 end
 
@@ -1047,7 +1083,6 @@ local function setNoclipEnabled(on)
         end
     end
 
-    -- نوتیف پایین راست برای Noclip
     showToggleNotification("Noclip", State.Noclip_Enabled)
 end
 
@@ -1182,7 +1217,7 @@ local function saveConfig()
         return
     end
 
-    local s, _ = pcall(function()
+    local s, err = pcall(function()
         writefile(path, enc)
     end)
 
@@ -1293,7 +1328,7 @@ titleStroke.Parent = title
 title.TextStrokeColor3 = Color3.fromRGB(255,255,255)
 title.TextStrokeTransparency = 0.6
 
--- User + Rank
+-- User + Rank (بدون کلمه‌ی User)
 local nameToShow = CONFIG_NAME or localPlayer.Name
 local rankToShow = CONFIG_RANK or "Member"
 
@@ -1319,7 +1354,7 @@ userLabel.Size = UDim2.new(1,-20,0,20)
 userLabel.BackgroundTransparency = 1
 userLabel.RichText = true
 userLabel.Text = string.format(
-    'User: %s - <b><font color="rgb(%d,%d,%d)">%s</font></b>',
+    '%s - <b><font color="rgb(%d,%d,%d)">%s</font></b>',
     nameToShow,
     rR, rG, rB,
     rankToShow
@@ -1405,36 +1440,14 @@ end
 
 mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
 
--- انیمیشن باز و بسته شدن پنل‌ها (Smooth)
+-- انیمیشن باز و بسته شدن پنل‌ها حذف شده (فقط Visible on/off)
 local function animateWindow(window, makeVisible)
     if makeVisible then
         window.Visible = true
-        stackSettingsWindows()
-        local pos = window.Position
-        window.Position = UDim2.new(pos.X.Scale, pos.X.Offset + 20, pos.Y.Scale, pos.Y.Offset + 10)
-        window.BackgroundTransparency = 1
-        TweenService:Create(
-            window,
-            TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { Position = pos, BackgroundTransparency = 0.3 }
-        ):Play()
     else
-        if not window.Visible then return end
-        local origPos = window.Position
-        local targetPos = UDim2.new(origPos.X.Scale, origPos.X.Offset + 20, origPos.Y.Scale, origPos.Y.Offset + 10)
-        local tween = TweenService:Create(
-            window,
-            TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            { Position = targetPos, BackgroundTransparency = 1 }
-        )
-        tween:Play()
-        tween.Completed:Connect(function()
-            window.Visible = false
-            window.Position = origPos
-            window.BackgroundTransparency = 0.3
-            stackSettingsWindows()
-        end)
+        window.Visible = false
     end
+    stackSettingsWindows()
 end
 
 ---------------------------------------------------------
@@ -1993,7 +2006,7 @@ if FeatureEnabled.teleport then
 end
 
 ---------------------------------------------------------
--- ESP Window UI (با RESET و رنگ‌های جدید)
+-- ESP Window UI
 ---------------------------------------------------------
 if FeatureEnabled.esp then
     local espTitle = Instance.new("TextLabel")
@@ -2038,7 +2051,6 @@ if FeatureEnabled.esp then
     State.ESPStateBtn = espStateBtn
     espStateBtn.MouseButton1Click:Connect(toggleESP)
 
-    -- رنگ‌ها: Red, Dark Red, Yellow, White, Rainbow
     colors = {
         { name = "RED",       color = Color3.fromRGB(255,0,0) },
         { name = "DARK RED",  color = Color3.fromRGB(150,0,0) },
@@ -2098,7 +2110,6 @@ if FeatureEnabled.esp then
         updateESPColorBtn()
     end)
 
-    -- RESET ESP
     local resetESPBtn = Instance.new("TextButton")
     resetESPBtn.Position = UDim2.new(0,0,0,90)
     resetESPBtn.Size = UDim2.new(1,0,0,35)
@@ -2144,7 +2155,6 @@ if FeatureEnabled.setting then
     setScrollCorner.CornerRadius = UDim.new(0,8)
     setScrollCorner.Parent = setScroll
 
-    -- Hide HotKey
     local hideLabel = Instance.new("TextLabel")
     hideLabel.Position = UDim2.new(0,0,0,0)
     hideLabel.Size = UDim2.new(0.5,0,0,30)
@@ -2178,7 +2188,6 @@ if FeatureEnabled.setting then
         hideHotkeyBtn.Text = "Hide: [Press Key]"
     end)
 
-    -- Config name
     local cfgLabel = Instance.new("TextLabel")
     cfgLabel.Position = UDim2.new(0,0,0,40)
     cfgLabel.Size = UDim2.new(0.5,0,0,30)
@@ -2207,7 +2216,6 @@ if FeatureEnabled.setting then
 
     State.ConfigNameBox = cfgBox
 
-    -- Save Config
     local saveCfgBtn = Instance.new("TextButton")
     saveCfgBtn.Position = UDim2.new(0,0,0,80)
     saveCfgBtn.Size = UDim2.new(1,0,0,35)
@@ -2225,7 +2233,6 @@ if FeatureEnabled.setting then
 
     saveCfgBtn.MouseButton1Click:Connect(saveConfig)
 
-    -- Load Config
     local loadCfgBtn = Instance.new("TextButton")
     loadCfgBtn.Position = UDim2.new(0,0,0,120)
     loadCfgBtn.Size = UDim2.new(1,0,0,35)
@@ -2332,7 +2339,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
     if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
-    -- در حال ست کردن هات‌کی
     if State.WaitingForHideHotKey then
         State.WaitingForHideHotKey = false
         State.Hide_HotKey = key
@@ -2373,7 +2379,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Hide UI با Hide_HotKey (دیفالت Insert)
     if State.Hide_HotKey and key == State.Hide_HotKey then
         if ScreenGui then
             ScreenGui.Enabled = not ScreenGui.Enabled
@@ -2381,25 +2386,21 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Toggle Fly
     if FeatureEnabled.fly and State.Fly_HotKey and key == State.Fly_HotKey then
         toggleFly()
         return
     end
 
-    -- Toggle FreeCam
     if FeatureEnabled.freecam and State.FreeCam_HotKey and key == State.FreeCam_HotKey then
         setFreeCamEnabled(not State.FreeCam_Enabled)
         return
     end
 
-    -- Toggle Noclip
     if FeatureEnabled.noclip and State.Noclip_HotKey and key == State.Noclip_HotKey then
         toggleNoclip()
         return
     end
 
-    -- حرکت FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled then
         if key == Enum.KeyCode.W then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
