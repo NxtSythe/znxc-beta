@@ -14,6 +14,12 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
+-- ZC time tag: szynixzmn.[Time in minutes]
+local TIME_TAG = "szynixzmn.1"
+local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
+local TIME_MINUTES = tonumber(TIME_RAW:match("%d+")) or 0
+local SESSION_INITIAL_SECONDS = TIME_MINUTES * 60
+
 -- esp, freecam, fly, teleport, setting
 local OFF_TAG = "szynixoff.none"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
@@ -130,12 +136,19 @@ local State = {
     ToggleNotifs = {},
     -- join notifications (bottom-right, جدا)
     JoinNotifs = {},
+
+    -- ZC timer
+    SessionTimeLeft = 0,
+    SessionTotalTime = 0,
+    SessionExpired = false,
+    ZC_Label = nil,
 }
 
 -- برای بعداً (پنل آپدیت‌ها و زوم کردن منوی اصلی)
 local showUpdatesPanel
 local showMainUI
 local hideMainUI
+local startSessionTimer
 
 ---------------------------------------------------------
 -- Helper functions
@@ -208,7 +221,7 @@ local function createLoadingGui()
     title.Position = UDim2.new(0,10,0,8)
     title.Font = Enum.Font.GothamBold
     title.TextScaled = true
-    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
     title.TextXAlignment = Enum.TextXAlignment.Center
     title.Text = "Zynix RBXC [BETA]"
     title.Parent = frame
@@ -316,6 +329,11 @@ local function createLoadingGui()
             -- بعد از لود منو، پنل آپدیت‌ها
             if showUpdatesPanel then
                 showUpdatesPanel()
+            end
+
+            -- شروع تایمر ZC (اگر تنظیم شده باشد)
+            if SESSION_INITIAL_SECONDS > 0 and startSessionTimer then
+                startSessionTimer()
             end
         end)
     end
@@ -485,6 +503,66 @@ local function showCenterNotification(text, color)
         )
         tweenOut:Play()
         tweenOut.Completed:Wait()
+        notifGui:Destroy()
+    end)
+end
+
+---------------------------------------------------------
+-- نوتیف Zoom in/out برای تایمر (مرکز صفحه)
+---------------------------------------------------------
+local function showZoomNotification(text, strokeColor, textColor, duration)
+    local notifGui = Instance.new("ScreenGui")
+    notifGui.Name = "ZynixTimedNotification"
+    notifGui.ResetOnSpawn = false
+    notifGui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 10, 0, 10)
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.Parent = notifGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = strokeColor or Color3.fromRGB(255, 0, 0)
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0,10,0,10)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.RichText = true
+    label.TextColor3 = textColor or Color3.fromRGB(255,0,0)
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Text = text
+    label.Parent = frame
+
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
+    task.spawn(function()
+        zoomIn.Completed:Wait()
+        task.wait(duration or 3)
+        local zoomOut = TweenService:Create(
+            frame,
+            TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
+        )
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
         notifGui:Destroy()
     end)
 end
@@ -1335,7 +1413,7 @@ mainStroke.Parent = mainWindow
 local title = Instance.new("TextLabel")
 title.Position = UDim2.new(0,10,0,10)
 title.Size = UDim2.new(1,-20,0,30)
-title.BackgroundColor3 = Color3.fromRGB(80,50,10)
+title.BackgroundColor3 = Color3.fromRGB(80,50,10) -- بک گراند قهوه‌ای
 title.BackgroundTransparency = 0
 title.Text = "Zynix RBXC [BETA]"
 title.TextColor3 = Color3.fromRGB(255,140,0) -- نارنجی
@@ -1346,10 +1424,6 @@ title.Parent = mainWindow
 local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0,8)
 titleCorner.Parent = title
-
--- حذف استروک قبلی و استفاده از گلو ظریف روی تکست
-title.TextStrokeColor3 = Color3.fromRGB(255,200,80)
-title.TextStrokeTransparency = 0.25
 
 -- User + Rank (بدون کلمه‌ی User)
 local nameToShow = CONFIG_NAME or localPlayer.Name
@@ -1388,9 +1462,22 @@ userLabel.Font = Enum.Font.Gotham
 userLabel.TextXAlignment = Enum.TextXAlignment.Left
 userLabel.Parent = mainWindow
 
+-- ZC timer label زیر Name - Rank
+local zcLabel = Instance.new("TextLabel")
+zcLabel.Position = UDim2.new(0,10,0,72)
+zcLabel.Size = UDim2.new(1,-20,0,18)
+zcLabel.BackgroundTransparency = 1
+zcLabel.Text = "ZC: --:--"
+zcLabel.TextColor3 = Color3.fromRGB(220,220,220)
+zcLabel.TextScaled = true
+zcLabel.Font = Enum.Font.Gotham
+zcLabel.TextXAlignment = Enum.TextXAlignment.Left
+zcLabel.Parent = mainWindow
+State.ZC_Label = zcLabel
+
 local mainScroll = Instance.new("ScrollingFrame")
-mainScroll.Position = UDim2.new(0,10,0,80)
-mainScroll.Size = UDim2.new(1,-20,1,-90)
+mainScroll.Position = UDim2.new(0,10,0,100) -- پایین‌تر به خاطر ZC
+mainScroll.Size = UDim2.new(1,-20,1,-110)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
 mainScroll.ScrollBarThickness = 4
@@ -2448,9 +2535,80 @@ showUpdatesPanel = function()
 end
 
 ---------------------------------------------------------
+-- تابع تایمر ZC (Session Timer)
+---------------------------------------------------------
+function startSessionTimer()
+    if SESSION_INITIAL_SECONDS <= 0 then return end
+    if State.SessionExpired then return end
+
+    State.SessionTotalTime = SESSION_INITIAL_SECONDS
+    State.SessionTimeLeft = SESSION_INITIAL_SECONDS
+
+    if State.ZC_Label then
+        local m = math.floor(State.SessionTimeLeft / 60)
+        local s = State.SessionTimeLeft % 60
+        State.ZC_Label.TextColor3 = Color3.fromRGB(220,220,220)
+        State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
+    end
+
+    task.spawn(function()
+        local warned = false
+        while State.SessionTimeLeft > 0 and not State.SessionExpired do
+            task.wait(1)
+            State.SessionTimeLeft = State.SessionTimeLeft - 1
+
+            if State.ZC_Label then
+                local m = math.floor(State.SessionTimeLeft / 60)
+                local s = State.SessionTimeLeft % 60
+                State.ZC_Label.Text = string.format("ZC: %02d:%02d", m, s)
+            end
+
+            if State.SessionTimeLeft <= 10 and not warned then
+                warned = true
+                if State.ZC_Label then
+                    State.ZC_Label.TextColor3 = Color3.fromRGB(255,0,0)
+                end
+                showZoomNotification(
+                    'You have <font color="rgb(255,0,0)">10</font> seconds left!',
+                    Color3.fromRGB(255,255,0),
+                    Color3.fromRGB(255,255,0),
+                    3
+                )
+            end
+        end
+
+        if State.SessionExpired then return end
+        State.SessionExpired = true
+
+        -- بستن همه پنل‌های باز با Zoom Out
+        for _, info in ipairs(SettingsWindows) do
+            if info.open then
+                toggleSettingsWindow(info.frame)
+            end
+        end
+
+        -- خاموش کردن همه‌چیز
+        if FeatureEnabled.freecam then setFreeCamEnabled(false) end
+        if FeatureEnabled.fly then stopFly() end
+        if FeatureEnabled.esp then setESPEnabled(false) end
+
+        hideMainUI()
+
+        -- نوتیف اتمام زمان
+        showZoomNotification(
+            "Your time is up!",
+            Color3.fromRGB(255,0,0),
+            Color3.fromRGB(255,0,0),
+            4
+        )
+    end)
+end
+
+---------------------------------------------------------
 -- Global Input (hotkeys + FreeCam move + Hide key + FreeCam M toggle)
 ---------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gp)
+    if State.SessionExpired then return end
     if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
@@ -2540,6 +2698,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 UserInputService.InputEnded:Connect(function(input, gp)
+    if State.SessionExpired then return end
     if gp or not State.FreeCam_Enabled or not FeatureEnabled.freecam then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
