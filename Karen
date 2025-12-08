@@ -1,14 +1,14 @@
-local PIN_TAG = "szynixloader.b*uu*x*ld*"
+local PIN_TAG = "szynixloader.b8uu8x9ld9"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
-local NAME_TAG = "szynixesm.Sythe"
+local NAME_TAG = "szynixesm.Karen"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
-local RANK_TAG = "szynixnghsh.Owner"
+local RANK_TAG = "szynixnghsh.VIP"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.10000"
+local TIME_TAG = "szynixzmn.20"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
@@ -298,7 +298,7 @@ local function createLoadingGui()
 
     local function handleSuccess()
         status.TextColor3 = Color3.fromRGB(44,187,21)
-        status.Text = "logged in as Sythe"
+        status.Text = "logged in as Karen"
         pinBox.Visible = false
         pinLabel.Visible = false
         confirmBtn.Visible = false
