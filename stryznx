@@ -14,8 +14,7 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
--- ZC time tag: szynixzmn.[Time in minutes]
-local TIME_TAG = "szynixzmn.1"
+local TIME_TAG = "szynixzmn.5"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local TIME_MINUTES = tonumber(TIME_RAW:match("%d+")) or 0
 local SESSION_INITIAL_SECONDS = TIME_MINUTES * 60
