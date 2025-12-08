@@ -129,6 +129,9 @@ local State = {
 
 	HideHotkeyBtn = nil,
 	ConfigNameBox = nil,
+
+	-- toggle notifications (bottom-right)
+	ToggleNotifs = {},
 }
 
 ---------------------------------------------------------
@@ -448,6 +451,102 @@ local function showCenterNotification(text, color)
 		)
 		tweenOut:Play()
 		tweenOut.Completed:Wait()
+		notifGui:Destroy()
+	end)
+end
+
+---------------------------------------------------------
+-- نوتیف پایین راست برای هات‌کی‌ها (stackable)
+---------------------------------------------------------
+local function showToggleNotification(featureName, isOn)
+	-- UI ممکنه مخفی باشه (ScreenGui.Enabled = false) ولی این نوتیف مستقل است
+	local notifGui = Instance.new("ScreenGui")
+	notifGui.Name = "ZynixToggleNotification"
+	notifGui.ResetOnSpawn = false
+	notifGui.Parent = playerGui
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 260, 0, 60)
+	frame.AnchorPoint = Vector2.new(1, 1)
+	frame.Position = UDim2.new(1, 280, 1, -20) -- از بیرون وارد می‌شه
+	frame.BackgroundColor3 = Color3.fromRGB(255, 215, 0) -- زرد
+	frame.BackgroundTransparency = 0.1
+	frame.BorderSizePixel = 0
+	frame.Parent = notifGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1.5
+	stroke.Color = Color3.fromRGB(255, 230, 0)
+	stroke.Parent = frame
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, -20, 1, -20)
+	label.Position = UDim2.new(0,10,0,10)
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.RichText = true
+	label.TextColor3 = Color3.fromRGB(255,255,255)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+
+	local onColor = isOn and "0,255,0" or "255,0,0"
+	local statusText = isOn and "ON" or "OFF"
+	label.Text = string.format(
+		'<font color="rgb(255,255,255)">%s:</font> <font color="rgb(%s)">%s</font>',
+		tostring(featureName),
+		onColor,
+		statusText
+	)
+	label.Parent = frame
+
+	-- نوتیف‌های قبلی رو یک طبقه بالا ببر
+	local height = frame.Size.Y.Offset
+	local spacing = 8
+	local delta = height + spacing
+
+	for _, info in ipairs(State.ToggleNotifs) do
+		if info.Frame and info.Frame.Parent then
+			local pos = info.Frame.Position
+			local newYOff = pos.Y.Offset - delta
+			TweenService:Create(
+				info.Frame,
+				TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+				{ Position = UDim2.new(1, -20, 1, newYOff) }
+			):Play()
+		end
+	end
+
+	table.insert(State.ToggleNotifs, {Gui = notifGui, Frame = frame})
+
+	local tweenIn = TweenService:Create(
+		frame,
+		TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+		{ Position = UDim2.new(1, -20, 1, -20) }
+	)
+	tweenIn:Play()
+
+	task.spawn(function()
+		task.wait(2.5)
+		local currentPos = frame.Position
+		local tweenOut = TweenService:Create(
+			frame,
+			TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+			{ Position = UDim2.new(1, 280, 1, currentPos.Y.Offset), BackgroundTransparency = 1 }
+		)
+		tweenOut:Play()
+		tweenOut.Completed:Wait()
+
+		for i, info in ipairs(State.ToggleNotifs) do
+			if info.Frame == frame then
+				table.remove(State.ToggleNotifs, i)
+				break
+			end
+		end
+
 		notifGui:Destroy()
 	end)
 end
@@ -808,6 +907,8 @@ local function toggleFly()
 	else
 		startFly()
 	end
+	-- نوتیف پایین راست برای Fly
+	showToggleNotification("Fly", State.Fly_Enabled)
 end
 
 localPlayer.CharacterAdded:Connect(function()
@@ -865,6 +966,9 @@ local function setFreeCamEnabled(state)
 			State.FreeCamStateBtn.Text = 'FreeCam: <font color="rgb(255,0,0)">OFF</font>'
 		end
 	end
+
+	-- نوتیف پایین راست برای FreeCam
+	showToggleNotification("FreeCam", State.FreeCam_Enabled)
 end
 
 UserInputService.InputChanged:Connect(function(input, gp)
@@ -896,12 +1000,14 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 ---------------------------------------------------------
--- Noclip logic (بهبود شده)
+-- Noclip logic (الهام گرفته از Infinite Yield)
 ---------------------------------------------------------
+local Clip = true  -- مثل Infinite Yield
 local function setNoclipEnabled(on)
 	if not FeatureEnabled.noclip then return end
 	if on == State.Noclip_Enabled then return end
 	State.Noclip_Enabled = on
+	Clip = not on and false or true
 
 	if State.Noclip_Conn then
 		State.Noclip_Conn:Disconnect()
@@ -918,7 +1024,7 @@ local function setNoclipEnabled(on)
 				hum:ChangeState(Enum.HumanoidStateType.Physics)
 			end
 			for _, part in ipairs(char:GetDescendants()) do
-				if part:IsA("BasePart") then
+				if part:IsA("BasePart") and part.CanCollide == true then
 					part.CanCollide = false
 				end
 			end
@@ -941,6 +1047,9 @@ local function setNoclipEnabled(on)
 			State.NoclipStateBtn.Text = 'Noclip: <font color="rgb(255,0,0)">OFF</font>'
 		end
 	end
+
+	-- نوتیف پایین راست برای Noclip
+	showToggleNotification("Noclip", State.Noclip_Enabled)
 end
 
 local function toggleNoclip()
@@ -1296,6 +1405,38 @@ local function stackSettingsWindows()
 end
 
 mainWindow:GetPropertyChangedSignal("Position"):Connect(stackSettingsWindows)
+
+-- انیمیشن باز و بسته شدن پنل‌ها (Smooth)
+local function animateWindow(window, makeVisible)
+	if makeVisible then
+		window.Visible = true
+		stackSettingsWindows()
+		local pos = window.Position
+		window.Position = UDim2.new(pos.X.Scale, pos.X.Offset + 20, pos.Y.Scale, pos.Y.Offset + 10)
+		window.BackgroundTransparency = 1
+		TweenService:Create(
+			window,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Position = pos, BackgroundTransparency = 0.3 }
+		):Play()
+	else
+		if not window.Visible then return end
+		local origPos = window.Position
+		local targetPos = UDim2.new(origPos.X.Scale, origPos.X.Offset + 20, origPos.Y.Scale, origPos.Y.Offset + 10)
+		local tween = TweenService:Create(
+			window,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ Position = targetPos, BackgroundTransparency = 1 }
+		)
+		tween:Play()
+		tween.Completed:Connect(function()
+			window.Visible = false
+			window.Position = origPos
+			window.BackgroundTransparency = 0.3
+			stackSettingsWindows()
+		end)
+	end
+end
 
 ---------------------------------------------------------
 -- Fly Window UI
@@ -2143,48 +2284,42 @@ local settingsPanelVisible = false
 if FeatureEnabled.fly then
 	createMainButton("Fly", grayBtnColor, function()
 		flyPanelVisible = not flyPanelVisible
-		flyWindow.Visible = flyPanelVisible
-		stackSettingsWindows()
+		animateWindow(flyWindow, flyPanelVisible)
 	end)
 end
 
 if FeatureEnabled.noclip then
 	createMainButton("Noclip", grayBtnColor, function()
 		noclipPanelVisible = not noclipPanelVisible
-		noclipWindow.Visible = noclipPanelVisible
-		stackSettingsWindows()
+		animateWindow(noclipWindow, noclipPanelVisible)
 	end)
 end
 
 if FeatureEnabled.teleport then
 	createMainButton("Teleportation", grayBtnColor, function()
 		teleportPanelVisible = not teleportPanelVisible
-		teleportWindow.Visible = teleportPanelVisible
-		stackSettingsWindows()
+		animateWindow(teleportWindow, teleportPanelVisible)
 	end)
 end
 
 if FeatureEnabled.esp then
 	createMainButton("ESP", grayBtnColor, function()
 		espPanelVisible = not espPanelVisible
-		espWindow.Visible = espPanelVisible
-		stackSettingsWindows()
+		animateWindow(espWindow, espPanelVisible)
 	end)
 end
 
 if FeatureEnabled.freecam then
 	createMainButton("FreeCam", grayBtnColor, function()
 		freeCamPanelVisible = not freeCamPanelVisible
-		freeCamWindow.Visible = freeCamPanelVisible
-		stackSettingsWindows()
+		animateWindow(freeCamWindow, freeCamPanelVisible)
 	end)
 end
 
 if FeatureEnabled.setting then
 	createMainButton("Settings", blueBtnColor, function()
 		settingsPanelVisible = not settingsPanelVisible
-		settingsWindow.Visible = settingsPanelVisible
-		stackSettingsWindows()
+		animateWindow(settingsWindow, settingsPanelVisible)
 	end)
 end
 
