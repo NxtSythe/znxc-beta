@@ -85,6 +85,10 @@ local State = {
     Cam_OrigSubject = nil,
     Cam_OrigCFrame = nil,
 
+    -- Freeze player while FreeCam
+    OriginalWalkSpeed = nil,
+    OriginalJumpPower = nil,
+
     -- Hide UI
     Hide_HotKey = Enum.KeyCode.Insert,
     Hide_HotKeyName = "Insert",
@@ -483,7 +487,7 @@ local function showCenterNotification(text, color)
 end
 
 ---------------------------------------------------------
--- نوتیف FreeCam: Press M to unlock your mouse
+-- نوتیف FreeCam: Press M to unlock your mouse (Zoom In / Zoom Out)
 ---------------------------------------------------------
 local function showFreeCamMouseHint()
     local notifGui = Instance.new("ScreenGui")
@@ -492,11 +496,11 @@ local function showFreeCamMouseHint()
     notifGui.Parent = playerGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 320, 0, 80)
+    frame.Size = UDim2.new(0, 10, 0, 10) -- شروع کوچک برای Zoom In
     frame.AnchorPoint = Vector2.new(0.5, 0.5)
     frame.Position = UDim2.new(0.5, 0, 0.5, 0)
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.3
+    frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
     frame.Parent = notifGui
 
@@ -521,15 +525,24 @@ local function showFreeCamMouseHint()
     label.Text = '<font color="rgb(255,255,255)">Press </font><font color="rgb(255,255,0)">M</font><font color="rgb(255,255,255)"> to unlock your mouse</font>'
     label.Parent = frame
 
+    -- Zoom In
+    local zoomIn = TweenService:Create(
+        frame,
+        TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = UDim2.new(0, 320, 0, 80), BackgroundTransparency = 0.3 }
+    )
+    zoomIn:Play()
+
     task.spawn(function()
         task.wait(2)
-        local tweenOut = TweenService:Create(
+        -- Zoom Out
+        local zoomOut = TweenService:Create(
             frame,
-            TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
-            { BackgroundTransparency = 1 }
+            TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            { Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1 }
         )
-        tweenOut:Play()
-        tweenOut.Completed:Wait()
+        zoomOut:Play()
+        zoomOut.Completed:Wait()
         notifGui:Destroy()
     end)
 end
@@ -1022,6 +1035,16 @@ local function setFreeCamEnabled(state)
         UserInputService.MouseIconEnabled = false
         State.FreeCam_MouseLocked = true
 
+        -- Freeze player while FreeCam is active
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            State.OriginalWalkSpeed = hum.WalkSpeed
+            State.OriginalJumpPower = hum.JumpPower
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+        end
+
         -- نوتیف FreeCam موس
         showFreeCamMouseHint()
     else
@@ -1038,6 +1061,20 @@ local function setFreeCamEnabled(state)
         if State.Cam_OrigCFrame then
             camera.CFrame = State.Cam_OrigCFrame
         end
+
+        -- Unfreeze player when FreeCam is disabled
+        local char = localPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if State.OriginalWalkSpeed then
+                hum.WalkSpeed = State.OriginalWalkSpeed
+            end
+            if State.OriginalJumpPower then
+                hum.JumpPower = State.OriginalJumpPower
+            end
+        end
+        State.OriginalWalkSpeed = nil
+        State.OriginalJumpPower = nil
     end
 
     if State.FreeCamStateBtn then
@@ -2279,9 +2316,17 @@ showUpdatesPanel = function()
 
     updatesLabel.Text =
         '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
-        '<font color="rgb(255,255,255)">No new features added in this update.</font>\n' ..
+        '<font color="rgb(255,255,255)">Fixed FreeCam bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
+        '<font color="rgb(255,255,255)">Fixed overlapping notifications bug</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
+        '<font color="rgb(255,255,255)">Player is now frozen while FreeCam is active (only the camera can move)</font>\n' ..
+        '<font color="rgb(0,255,0)"><b>+ </b></font>' ..
+        '<font color="rgb(255,255,255)">Added zoom in / zoom out animation to the "Press M to unlock your mouse" notification</font>\n' ..
         '<font color="rgb(255,0,0)"><b>- </b></font>' ..
-        '<font color="rgb(255,255,255)">NoClip feature is currently unavailable.</font>'
+        '<font color="rgb(255,255,255)">NoClip has been temporarily disabled while related bugs are being fixed</font>\n' ..
+        '<font color="rgb(255,0,0)"><b>- </b></font>' ..
+        '<font color="rgb(255,255,255)">Heavy animations have been removed to make the script lighter and improve loading speed</font>'
 
     updatesLabel.Parent = frame
 
