@@ -1,4 +1,4 @@
-local PIN_TAG = "szynixloader.b1uu1x1ld1"
+local PIN_TAG = "szynixloader.b*uu*x*ld*"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
@@ -8,11 +8,11 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.Member"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.10"
+local TIME_TAG = "szynixzmn.15"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
-local OFF_TAG = "szynixoff.none"
+local OFF_TAG = "szynixoff.teleport,fly"
 local offRaw = OFF_TAG:match("szynixoff%.(.+)") or ""
 local OffFeatures = {}
 for part in string.gmatch(offRaw, "[^,]+") do
@@ -297,8 +297,8 @@ local function createLoadingGui()
     end
 
     local function handleSuccess()
-        status.TextColor3 = Color3.fromRGB(255,255,255)
-        status.Text = "Successful!"
+        status.TextColor3 = Color3.fromRGB(44,187,21)
+        status.Text = "logged in as Guest"
         pinBox.Visible = false
         pinLabel.Visible = false
         confirmBtn.Visible = false
