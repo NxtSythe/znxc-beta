@@ -1,4 +1,4 @@
-local PIN_TAG = "szynixloader.b1uu1x1ld1"
+local PIN_TAG = "szynixloader.b*uu*x*ld*"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
@@ -297,7 +297,7 @@ local function createLoadingGui()
     end
 
     local function handleSuccess()
-        status.TextColor3 = Color3.fromRGB(255,0,0)
+        status.rainbow = true
         status.Text = "logged in as Sythe"
         pinBox.Visible = false
         pinLabel.Visible = false
