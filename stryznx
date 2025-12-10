@@ -1770,7 +1770,7 @@ if FeatureEnabled.freecam then
 
     local freeScroll = Instance.new("ScrollingFrame")
     freeScroll.Position = UDim2.new(0,10,0,45)
-    freeScroll.Size = UDim2.new(1)
+    freeScroll.Size = UDim2.new(1, 0, 1, -55)
     local freeStateBtn = Instance.new("TextButton")
     freeStateBtn.Position = UDim2.new(0,0,0,0)
     freeStateBtn.Size = UDim2.new(1,0,0,35)
