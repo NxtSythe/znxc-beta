@@ -1,4 +1,4 @@
-local PIN_TAG = "szynixloader.b*uu*x*ld*"
+local PIN_TAG = "szynixloader.b3uu2x5ld3"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
@@ -49,6 +49,9 @@ local State = {
     ESP_Color = Color3.fromRGB(255, 0, 0),
     ESP_Rainbow = false,
     Highlights = {},
+    NameTags = {},              -- NEW: برای NameTag ها
+
+    ESP_MaxDistance = math.huge, -- NEW: حداکثر فاصله‌ی ESP (INF)
 
     Fly_Enabled = false,
     Fly_Speed = 1,
@@ -94,6 +97,7 @@ local State = {
     FreeCam_Window = nil,
     Teleport_Window = nil,
     Settings_Window = nil,
+    Other_Window = nil,
 
     FlyStateBtn = nil,
     FlySpeedBox = nil,
@@ -656,9 +660,55 @@ local function showToggleNotification(featureName, isOn)
     end)
 end
 
+--=== ESP / NameTag / Distance ===
+
 local colors
-local colorIndex
+local colorIndex = 1
+
+local espDistances = {50, 100, 200, 400, 500, math.huge}
+local espDistanceNames = {"50", "100", "200", "400", "500", "INF"}
+local espDistanceIndex = 6 -- پیش‌فرض INF
+
 local updateESPColorBtn
+local updateESPDistanceBtn
+
+local function createNameTagForPlayer(char, player)
+    local head = char:FindFirstChild("Head") or getRoot(char)
+    if not head then return nil end
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = "ZynixNameTag"
+    bill.Size = UDim2.new(0, 120, 0, 24)
+    bill.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+    bill.AlwaysOnTop = true
+    bill.Adornee = head
+    bill.Enabled = State.ESP_Enabled
+    bill.Parent = char
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bg.BackgroundTransparency = 0.3 -- تقریباً 70٪ opacity
+    bg.BorderSizePixel = 0
+    bg.Parent = bill
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1.5
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Parent = bg
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -4, 1, -4)
+    label.Position = UDim2.new(0, 2, 0, 2)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Text = player.Name
+    label.Parent = bg
+
+    return bill
+end
 
 local function applyESPToPlayer(player)
     if not FeatureEnabled.esp then return end
@@ -666,6 +716,7 @@ local function applyESPToPlayer(player)
     local char = player.Character
     if not char then return end
 
+    -- Highlight
     local h = State.Highlights[player]
     if not h or not h.Parent then
         h = Instance.new("Highlight")
@@ -677,13 +728,49 @@ local function applyESPToPlayer(player)
         State.Highlights[player] = h
     end
     h.FillColor = getCurrentESPColor()
+
+    -- NameTag
+    local tag = State.NameTags[player]
+    if not tag or not tag.Parent then
+        tag = createNameTagForPlayer(char, player)
+        State.NameTags[player] = tag
+    end
 end
 
 local function refreshAllESP()
     if not FeatureEnabled.esp then return end
+
+    local myChar = localPlayer.Character
+    local myRoot = myChar and getRoot(myChar)
+
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= localPlayer then
-            applyESPToPlayer(p)
+            local char = p.Character
+            local root = char and getRoot(char)
+
+            if char and root and myRoot then
+                applyESPToPlayer(p)
+
+                local dist = (root.Position - myRoot.Position).Magnitude
+                local maxDist = State.ESP_MaxDistance or math.huge
+                local inRange = State.ESP_Enabled and (dist <= maxDist)
+
+                local h = State.Highlights[p]
+                if h then
+                    h.Enabled = inRange
+                end
+
+                local tag = State.NameTags[p]
+                if tag then
+                    tag.Enabled = inRange
+                end
+            else
+                local h = State.Highlights[p]
+                if h then h.Enabled = false end
+
+                local tag = State.NameTags[p]
+                if tag then tag.Enabled = false end
+            end
         end
     end
 end
@@ -691,11 +778,19 @@ end
 local function setESPEnabled(on)
     if not FeatureEnabled.esp then return end
     State.ESP_Enabled = on
+
     for _, h in pairs(State.Highlights) do
         if h then
             h.Enabled = on
         end
     end
+
+    for _, tag in pairs(State.NameTags) do
+        if tag then
+            tag.Enabled = on
+        end
+    end
+
     if State.ESPStateBtn then
         if on then
             State.ESPStateBtn.Text = 'ESP: <font color="rgb(0,255,0)">ON</font>'
@@ -714,12 +809,21 @@ end
 local function resetESP()
     if State.ZC_Expired then return end
     if not FeatureEnabled.esp then return end
+
     for p, h in pairs(State.Highlights) do
         if h then
             h:Destroy()
         end
         State.Highlights[p] = nil
     end
+
+    for p, tag in pairs(State.NameTags) do
+        if tag then
+            tag:Destroy()
+        end
+        State.NameTags[p] = nil
+    end
+
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= localPlayer then
             applyESPToPlayer(p)
@@ -750,6 +854,20 @@ Players.PlayerAdded:Connect(function(p)
     end
 end)
 
+Players.PlayerRemoving:Connect(function(p)
+    local h = State.Highlights[p]
+    if h then
+        h:Destroy()
+        State.Highlights[p] = nil
+    end
+
+    local tag = State.NameTags[p]
+    if tag then
+        tag:Destroy()
+        State.NameTags[p] = nil
+    end
+end)
+
 task.spawn(function()
     while true do
         task.wait(1)
@@ -773,6 +891,8 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
+--=== Teleportation + Waypoints + Heal/Respawn (functions فقط، UI بعداً) ===
 
 local function teleportToPlayer(targetName)
     if State.ZC_Expired then return end
@@ -880,6 +1000,26 @@ local function updateWaypointLabel()
         State.WaypointListLabel.Text = "Current WPs: (none)"
     else
         State.WaypointListLabel.Text = "Current WPs: " .. table.concat(names, ", ")
+    end
+end
+
+local function healLocalPlayer()
+    if State.ZC_Expired then return end
+    local char = localPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = hum.MaxHealth
+        showCenterNotification("HP Filled!", Color3.fromRGB(0,255,0))
+    end
+end
+
+local function respawnLocalPlayer()
+    if State.ZC_Expired then return end
+    local char = localPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+        showCenterNotification("Respawning...", Color3.fromRGB(255,255,0))
     end
 end
 
@@ -1019,6 +1159,8 @@ localPlayer.CharacterAdded:Connect(function()
     end
 end)
 
+--=== FreeCam System ===
+
 local function setFreeCamEnabled(state)
     if not FeatureEnabled.freecam then return end
     if state == State.FreeCam_Enabled then return end
@@ -1130,6 +1272,8 @@ RunService.RenderStepped:Connect(function(dt)
     camera.CFrame = cf
 end)
 
+--=== Config / File System ===
+
 local CONFIG_FOLDER = "ZynixRBXC"
 
 local function ensureConfigFolder()
@@ -1161,6 +1305,8 @@ local function buildConfig()
 
         ESP_ColorIndex = colorIndex or 1,
         ESP_Rainbow = State.ESP_Rainbow,
+        -- می‌تونی اگر خواستی بعداً ESP distance رو هم ذخیره کنی
+        -- ESP_DistanceIndex = espDistanceIndex
     }
 end
 
@@ -1204,7 +1350,7 @@ local function applyConfig(cfg)
         State.Hide_HotKey = kc
         State.Hide_HotKeyName = cfg.Hide_HotKey
         if State.HideHotkeyBtn then
-            State.HideHotkeyBtn.Text = "Hide: " .. State.Hide_HotKeyName
+            State.HideHotkeyBtn.Text = "" .. State.Hide_HotKeyName
         end
     end
 
@@ -1214,6 +1360,14 @@ local function applyConfig(cfg)
             updateESPColorBtn()
         end
     end
+
+    -- اگر بعداً ESP_DistanceIndex رو ذخیره کردی، اینجا می‌تونی برگردونی:
+    -- if cfg.ESP_DistanceIndex and espDistances[cfg.ESP_DistanceIndex] then
+    --     espDistanceIndex = cfg.ESP_DistanceIndex
+    --     if updateESPDistanceBtn then
+    --         updateESPDistanceBtn()
+    --     end
+    -- end
 end
 
 local function saveConfig()
@@ -1298,12 +1452,14 @@ local function loadConfig()
     showCenterNotification("Config loaded successfully!", Color3.fromRGB(0,255,0))
 end
 
-local grayBtnColor = Color3.fromRGB(80,80,80)
+--=== UI Colors / Main Window ===
+
+local grayBtnColor    = Color3.fromRGB(80,80,80)
 local darkRedBtnColor = Color3.fromRGB(90,0,0)
-local blueBtnColor = Color3.fromRGB(0,110,220)
+local blueBtnColor    = Color3.fromRGB(0,110,220)
 
 local MAIN_DEFAULT_SIZE = UDim2.new(0, 220, 0, 310)
-local MAIN_DEFAULT_POS = UDim2.new(0, 20, 1, -330)
+local MAIN_DEFAULT_POS  = UDim2.new(0, 20, 1, -330)
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ZynixUI"
@@ -1406,15 +1562,18 @@ mainScroll.Size = UDim2.new(1,-20,1,-110)
 mainScroll.BackgroundTransparency = 1
 mainScroll.BorderSizePixel = 0
 mainScroll.ScrollBarThickness = 4
-mainScroll.CanvasSize = UDim2.new(0,0,0,350)
+mainScroll.CanvasSize = UDim2.new(0,0,0,400)
 mainScroll.Parent = mainWindow
 
 local mainScrollCorner = Instance.new("UICorner")
 mainScrollCorner.CornerRadius = UDim.new(0,8)
 mainScrollCorner.Parent = mainScroll
 
+--=== Settings Windows (Fly / ESP / Teleport / FreeCam / Settings / Other) ===
+
 local function createSettingsWindow(name, w, h)
     local frame = Instance.new("Frame")
+    frame.Name = name
     frame.Size = UDim2.new(0,w,0,h)
     frame.BackgroundColor3 = Color3.fromRGB(20,20,25)
     frame.BackgroundTransparency = 0.3
@@ -1433,17 +1592,19 @@ local function createSettingsWindow(name, w, h)
     return frame
 end
 
-local flyWindow      = createSettingsWindow("FlyWindow", 230, 200)
-local espWindow      = createSettingsWindow("ESPWindow", 230, 240)
-local teleportWindow = createSettingsWindow("TeleportWindow", 260, 260)
-local freeCamWindow  = createSettingsWindow("FreeCamWindow", 230, 200)
-local settingsWindow = createSettingsWindow("SettingsWindow", 230, 200)
+local flyWindow      = createSettingsWindow("FlyWindow",       230, 200)
+local espWindow      = createSettingsWindow("ESPWindow",       230, 240)
+local teleportWindow = createSettingsWindow("TeleportWindow",  260, 260)
+local freeCamWindow  = createSettingsWindow("FreeCamWindow",   230, 200)
+local settingsWindow = createSettingsWindow("SettingsWindow",  230, 200)
+local otherWindow    = createSettingsWindow("OtherWindow",     230, 160) -- NEW: Other panel
 
-State.Fly_Window = flyWindow
-State.ESP_Window = espWindow
+State.Fly_Window      = flyWindow
+State.ESP_Window      = espWindow
 State.Teleport_Window = teleportWindow
-State.FreeCam_Window = freeCamWindow
+State.FreeCam_Window  = freeCamWindow
 State.Settings_Window = settingsWindow
+State.Other_Window    = otherWindow
 
 local SettingsWindows = {}
 local WindowInfoByFrame = {}
@@ -1460,6 +1621,7 @@ registerSettingsWindow(teleportWindow)
 registerSettingsWindow(espWindow)
 registerSettingsWindow(freeCamWindow)
 registerSettingsWindow(settingsWindow)
+registerSettingsWindow(otherWindow) -- NEW
 
 local function layoutSettingsWindows(animated)
     local basePos = mainWindow.Position
@@ -1569,6 +1731,35 @@ function hideMainUI()
     State.UIHidden = true
 end
 
+local y = 0
+local function createMainButton(text, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Position = UDim2.new(0,0,0,y)
+    btn.Size = UDim2.new(1,0,0,40)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextScaled = true
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Text = text
+    btn.Parent = mainScroll
+    addHoverEffect(btn, color)
+    btn.BackgroundColor3 = color
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0,8)
+    c.Parent = btn
+
+    y = y + 50
+
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+
+    return btn
+end
+
+--================= UI داخلی پنجره‌ها =================
+
+------------------ Fly Window ------------------
 if FeatureEnabled.fly then
     local flyTitle = Instance.new("TextLabel")
     flyTitle.Position = UDim2.new(0,10,0,10)
@@ -1674,6 +1865,7 @@ if FeatureEnabled.fly then
     end)
 end
 
+------------------ FreeCam Window ------------------
 if FeatureEnabled.freecam then
     local freeTitle = Instance.new("TextLabel")
     freeTitle.Position = UDim2.new(0,10,0,10)
@@ -1781,6 +1973,7 @@ if FeatureEnabled.freecam then
     end)
 end
 
+------------------ Teleport Window ------------------
 if FeatureEnabled.teleport then
     local tpTitle = Instance.new("TextLabel")
     tpTitle.Position = UDim2.new(0,10,0,10)
@@ -2046,6 +2239,7 @@ if FeatureEnabled.teleport then
     updateWaypointLabel()
 end
 
+------------------ ESP Window + Distance ------------------
 if FeatureEnabled.esp then
     local espTitle = Instance.new("TextLabel")
     espTitle.Position = UDim2.new(0,10,0,10)
@@ -2063,7 +2257,7 @@ if FeatureEnabled.esp then
     espScroll.BackgroundTransparency = 1
     espScroll.BorderSizePixel = 0
     espScroll.ScrollBarThickness = 4
-    espScroll.CanvasSize = UDim2.new(0,0,0,190)
+    espScroll.CanvasSize = UDim2.new(0,0,0,230)
     espScroll.Parent = espWindow
 
     local espScrollCorner = Instance.new("UICorner")
@@ -2089,6 +2283,7 @@ if FeatureEnabled.esp then
     State.ESPStateBtn = espStateBtn
     espStateBtn.MouseButton1Click:Connect(toggleESP)
 
+    -- رنگ‌های ESP
     colors = {
         { name = "RED",       color = Color3.fromRGB(255,0,0) },
         { name = "DARK RED",  color = Color3.fromRGB(150,0,0) },
@@ -2148,8 +2343,54 @@ if FeatureEnabled.esp then
         updateESPColorBtn()
     end)
 
+    -- فاصله‌های ESP
+    local espDistances = {
+        { name = "50",  value = 50  },
+        { name = "100", value = 100 },
+        { name = "200", value = 200 },
+        { name = "400", value = 400 },
+        { name = "500", value = 500 },
+        { name = "INF", value = math.huge },
+    }
+    local espDistanceIndex = 6 -- پیش‌فرض INF
+
+    local espDistanceBtn = Instance.new("TextButton")
+    espDistanceBtn.Position = UDim2.new(0,0,0,90)
+    espDistanceBtn.Size = UDim2.new(1,0,0,35)
+    espDistanceBtn.BackgroundColor3 = Color3.fromRGB(40,40,50)
+    espDistanceBtn.Font = Enum.Font.GothamSemibold
+    espDistanceBtn.TextScaled = true
+    espDistanceBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    espDistanceBtn.RichText = true
+    espDistanceBtn.Parent = espScroll
+    addHoverEffect(espDistanceBtn, espDistanceBtn.BackgroundColor3)
+
+    local espDistanceCorner = Instance.new("UICorner")
+    espDistanceCorner.CornerRadius = UDim.new(0,8)
+    espDistanceCorner.Parent = espDistanceBtn
+
+    State.ESP_MaxDistance = espDistances[espDistanceIndex].value
+
+    local function updateESPDistanceBtn()
+        local opt = espDistances[espDistanceIndex]
+        State.ESP_MaxDistance = opt.value
+        espDistanceBtn.Text = string.format('ESP DISTANCE: <font color="rgb(0,255,255)">%s</font>', opt.name)
+        -- بلافاصله ریفرش شود تا Highlight / NameTag ها با فاصله‌ی جدید آپدیت شوند
+        refreshAllESP()
+    end
+
+    updateESPDistanceBtn()
+
+    espDistanceBtn.MouseButton1Click:Connect(function()
+        espDistanceIndex = espDistanceIndex + 1
+        if espDistanceIndex > #espDistances then
+            espDistanceIndex = 1
+        end
+        updateESPDistanceBtn()
+    end)
+
     local resetESPBtn = Instance.new("TextButton")
-    resetESPBtn.Position = UDim2.new(0,0,0,90)
+    resetESPBtn.Position = UDim2.new(0,0,0,135)
     resetESPBtn.Size = UDim2.new(1,0,0,35)
     resetESPBtn.BackgroundColor3 = Color3.fromRGB(140,0,0)
     resetESPBtn.Font = Enum.Font.GothamSemibold
@@ -2166,6 +2407,7 @@ if FeatureEnabled.esp then
     resetESPBtn.MouseButton1Click:Connect(resetESP)
 end
 
+------------------ Settings Window ------------------
 if FeatureEnabled.setting then
     local setTitle = Instance.new("TextLabel")
     setTitle.Position = UDim2.new(0,10,0,10)
@@ -2286,31 +2528,71 @@ if FeatureEnabled.setting then
     loadCfgBtn.MouseButton1Click:Connect(loadConfig)
 end
 
-local y = 0
-local function createMainButton(text, color, callback)
-    local btn = Instance.new("TextButton")
-    btn.Position = UDim2.new(0,0,0,y)
-    btn.Size = UDim2.new(1,0,0,40)
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextScaled = true
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Text = text
-    btn.Parent = mainScroll
-    addHoverEffect(btn, color)
-    btn.BackgroundColor3 = color
+------------------ Other Window (Heal / Respawn) ------------------
+do
+    local otherTitle = Instance.new("TextLabel")
+    otherTitle.Position = UDim2.new(0,10,0,10)
+    otherTitle.Size = UDim2.new(1,-20,0,25)
+    otherTitle.BackgroundTransparency = 1
+    otherTitle.Text = "Other"
+    otherTitle.TextColor3 = Color3.fromRGB(200,200,255)
+    otherTitle.TextScaled = true
+    otherTitle.Font = Enum.Font.GothamBold
+    otherTitle.Parent = otherWindow
 
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0,8)
-    c.Parent = btn
+    local otherScroll = Instance.new("ScrollingFrame")
+    otherScroll.Position = UDim2.new(0,10,0,45)
+    otherScroll.Size = UDim2.new(1,-20,1,-55)
+    otherScroll.BackgroundTransparency = 1
+    otherScroll.BorderSizePixel = 0
+    otherScroll.ScrollBarThickness = 4
+    otherScroll.CanvasSize = UDim2.new(0,0,0,120)
+    otherScroll.Parent = otherWindow
 
-    y = y + 50
+    local otherScrollCorner = Instance.new("UICorner")
+    otherScrollCorner.CornerRadius = UDim.new(0,8)
+    otherScrollCorner.Parent = otherScroll
 
-    if callback then
-        btn.MouseButton1Click:Connect(callback)
-    end
+    local healBtn = Instance.new("TextButton")
+    healBtn.Position = UDim2.new(0,0,0,0)
+    healBtn.Size = UDim2.new(1,0,0,40)
+    healBtn.BackgroundColor3 = Color3.fromRGB(0,110,0)
+    healBtn.Font = Enum.Font.GothamSemibold
+    healBtn.TextScaled = true
+    healBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    healBtn.Text = "Heal"
+    healBtn.Parent = otherScroll
+    addHoverEffect(healBtn, healBtn.BackgroundColor3)
 
-    return btn
+    local healCorner = Instance.new("UICorner")
+    healCorner.CornerRadius = UDim.new(0,8)
+    healCorner.Parent = healBtn
+
+    healBtn.MouseButton1Click:Connect(function()
+        healLocalPlayer()
+    end)
+
+    local respawnBtn = Instance.new("TextButton")
+    respawnBtn.Position = UDim2.new(0,0,0,50)
+    respawnBtn.Size = UDim2.new(1,0,0,40)
+    respawnBtn.BackgroundColor3 = Color3.fromRGB(110,0,0)
+    respawnBtn.Font = Enum.Font.GothamSemibold
+    respawnBtn.TextScaled = true
+    respawnBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    respawnBtn.Text = "Respawn"
+    respawnBtn.Parent = otherScroll
+    addHoverEffect(respawnBtn, respawnBtn.BackgroundColor3)
+
+    local respawnCorner = Instance.new("UICorner")
+    respawnCorner.CornerRadius = UDim.new(0,8)
+    respawnCorner.Parent = respawnBtn
+
+    respawnBtn.MouseButton1Click:Connect(function()
+        respawnLocalPlayer()
+    end)
 end
+
+--================= دکمه‌های اصلی منوی سمت چپ =================
 
 if FeatureEnabled.fly then
     createMainButton("Fly", grayBtnColor, function()
@@ -2343,6 +2625,13 @@ if FeatureEnabled.freecam then
         end
     end)
 end
+
+-- دکمه Other دقیقا بالای Settings
+createMainButton("Other", grayBtnColor, function()
+    if State.Other_Window then
+        toggleSettingsWindow(State.Other_Window)
+    end
+end)
 
 if FeatureEnabled.setting then
     createMainButton("Settings", blueBtnColor, function()
@@ -2411,6 +2700,7 @@ local function showTimeOverNotification()
     end)
 end
 
+-- نوتیفایر ۱۰ ثانیه آخر
 local function showTimeAlmostOverNotification()
     local notifGui = Instance.new("ScreenGui")
     notifGui.Name = "ZynixTimeAlmostOver"
@@ -2529,6 +2819,7 @@ function showZCTimeInfoNotification()
     end)
 end
 
+-- پنل آپدیت‌ها
 showUpdatesPanel = function()
     if not ScreenGui then return end
 
@@ -2605,6 +2896,7 @@ showUpdatesPanel = function()
     end)
 end
 
+-- خاموش کردن همه‌چیز وقتی تایم تموم شد
 disableEverythingAndClose = function()
     State.ZC_Enabled = false
 
@@ -2625,6 +2917,7 @@ disableEverythingAndClose = function()
     end
 end
 
+-- تایمر ZC
 startZCTimer = function()
     if not State.ZC_Enabled or State.ZC_Expired or State.ZC_TotalSeconds <= 0 then return end
     if State.ZC_TimerRunning then return end
@@ -2661,11 +2954,13 @@ startZCTimer = function()
     end)
 end
 
+-- هندل کردن ورودی‌ها (کلیدها)
 UserInputService.InputBegan:Connect(function(input, gp)
     if State.ZC_Expired then return end
     if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local key = input.KeyCode
 
+    -- در حال انتظار برای تعریف هات‌کی Hide UI
     if State.WaitingForHideHotKey then
         State.WaitingForHideHotKey = false
         State.Hide_HotKey = key
@@ -2676,6 +2971,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
+    -- در حال انتظار برای هات‌کی Fly
     if State.WaitingForFlyHotKey and FeatureEnabled.fly then
         State.WaitingForFlyHotKey = false
         State.Fly_HotKey = key
@@ -2686,6 +2982,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
+    -- در حال انتظار برای هات‌کی FreeCam
     if State.WaitingForFreeCamHotKey and FeatureEnabled.freecam then
         State.WaitingForFreeCamHotKey = false
         State.FreeCam_HotKey = key
@@ -2696,6 +2993,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
+    -- Hide / Show UI
     if State.Hide_HotKey and key == State.Hide_HotKey then
         if ScreenGui then
             if not ScreenGui.Enabled or State.UIHidden then
@@ -2707,16 +3005,19 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
+    -- هات‌کی Fly
     if FeatureEnabled.fly and State.Fly_HotKey and key == State.Fly_HotKey then
         toggleFly()
         return
     end
 
+    -- هات‌کی FreeCam
     if FeatureEnabled.freecam and State.FreeCam_HotKey and key == State.FreeCam_HotKey then
         setFreeCamEnabled(not State.FreeCam_Enabled)
         return
     end
 
+    -- قفل/آزاد کردن موس در FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled and key == Enum.KeyCode.M then
         if State.FreeCam_MouseLocked then
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -2730,6 +3031,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
         return
     end
 
+    -- کنترل حرکت FreeCam
     if FeatureEnabled.freecam and State.FreeCam_Enabled then
         if key == Enum.KeyCode.W then
             State.FreeCam_MoveDir = State.FreeCam_MoveDir + Vector3.new(0,0,-1)
