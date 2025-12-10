@@ -1,4 +1,4 @@
-local PIN_TAG = "szynixloader.b2uu2x3ld3"
+local PIN_TAG = "szynixloader.b3uu9x3ld9"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
