@@ -1,11 +1,11 @@
-local PIN_TAG = "szynixloader.b3uu2x5ld3"
+local PIN_TAG = "szynixloader.b2uu9x1ld3"
 local PIN_RAW = PIN_TAG:match("szynixloader%.(.+)") or ""
 local CORRECT_PIN = PIN_RAW:gsub("%D","")
 
-local NAME_TAG = "szynixesm.Sythe"
+local NAME_TAG = "szynixesm.Juwpax"
 local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 
-local RANK_TAG = "szynixnghsh.Owner"
+local RANK_TAG = "szynixnghsh.VIP"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
 local TIME_TAG = "szynixzmn.10000"
