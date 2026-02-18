@@ -8,7 +8,7 @@ local CONFIG_NAME = NAME_TAG:match("szynixesm%.(.+)")
 local RANK_TAG = "szynixnghsh.VIP"
 local CONFIG_RANK = RANK_TAG:match("szynixnghsh%.(.+)")
 
-local TIME_TAG = "szynixzmn.10000"
+local TIME_TAG = "szynixzmn.30"
 local TIME_RAW = TIME_TAG:match("szynixzmn%.(.+)") or ""
 local CONFIG_TIME_MIN = tonumber(TIME_RAW:match("%d+")) or 0
 
@@ -302,7 +302,7 @@ local function createLoadingGui()
 
     local function handleSuccess()
         status.TextColor3 = Color3.fromRGB(44,187,21)
-        status.Text = "logged in as Sythe"
+        status.Text = "logged in as Juwpax"
         pinBox.Visible = false
         pinLabel.Visible = false
         confirmBtn.Visible = false
